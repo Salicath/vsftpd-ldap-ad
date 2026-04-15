@@ -40,6 +40,10 @@ TransferLog           none
   # For nested groups, swap memberOf= for memberOf:1.2.840.113556.1.4.1941:=
   LDAPUsers           "${AD_BASE_DN}" "(&(sAMAccountName=%u)(memberOf=${AD_GROUP_DN}))"
 
+  # AD stores usernames in sAMAccountName, not the POSIX 'uid' attribute
+  # mod_ldap expects; map it so the lookup actually returns a user record.
+  LDAPAttr            uid sAMAccountName
+
   # Force every authenticated user to the local ftpuser identity (uid 1000).
   LDAPDefaultUID      1000
   LDAPDefaultGID      1000
