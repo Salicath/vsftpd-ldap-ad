@@ -22,5 +22,35 @@ chmod 600 /etc/proftpd/proftpd.conf
 chown ftpuser:ftpuser /home/vsftpd
 chmod 700 /home/vsftpd
 
+# Optional FTPS: enable by setting FTPS_ENABLE=YES in ftp.env.
+# Uses a mounted cert at /etc/proftpd/ssl/proftpd.pem if present,
+# otherwise auto-generates a self-signed one. Replace with a CA-issued
+# cert in production by mounting a real proftpd.pem via the Quadlet.
+if [ "${FTPS_ENABLE:-NO}" = "YES" ]; then
+    install -d -o root -g root -m 755 /etc/proftpd/ssl
+    CERT=/etc/proftpd/ssl/proftpd.pem
+    if [ ! -f "$CERT" ]; then
+        echo "FTPS: no cert mounted, generating self-signed"
+        openssl req -x509 -nodes -days 825 -newkey rsa:2048 \
+            -keyout "$CERT" -out "$CERT" \
+            -subj "/CN=ftp-ldap" >/dev/null 2>&1
+        chmod 600 "$CERT"
+    else
+        echo "FTPS: using mounted cert at $CERT"
+    fi
+    cat >> /etc/proftpd/proftpd.conf <<EOF
+
+<IfModule mod_tls.c>
+  TLSEngine              on
+  TLSRequired            on
+  TLSProtocol            TLSv1.2 TLSv1.3
+  TLSRSACertificateFile  $CERT
+  TLSRSACertificateKeyFile $CERT
+  TLSOptions             NoCertRequest NoSessionReuseRequired
+  TLSVerifyClient        off
+</IfModule>
+EOF
+fi
+
 echo "launching proftpd"
 exec proftpd --nodaemon --config /etc/proftpd/proftpd.conf
