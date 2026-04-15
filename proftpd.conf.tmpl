@@ -42,6 +42,12 @@ TransferLog           none
   LDAPAuthBinds       on
   LDAPSearchScope     subtree
 
+  # AD emits referrals to CN=Configuration, DomainDnsZones, ForestDnsZones
+  # alongside real results; following them from inside a container fails
+  # DNS and causes the entire search to time out. Known issue:
+  # https://github.com/proftpd/mod_ldap/issues/4
+  LDAPReferrals       off
+
   # The access-control line: only AD users in the target group match.
   # Third filter (uid-number) is required for syntactic completeness even
   # though LDAPForceDefaultUID means it's never actually queried.
