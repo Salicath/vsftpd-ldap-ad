@@ -4,10 +4,10 @@
 #        ./test.sh 192.168.1.13 (override host)
 set -u
 
-GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
-pass() { echo -e "  ${GREEN}[PASS]${NC} $*"; }
-fail() { echo -e "  ${RED}[FAIL]${NC} $*"; FAILED=1; }
-warn() { echo -e "  ${YELLOW}[WARN]${NC} $*"; }
+GREEN=$'\e[0;32m'; RED=$'\e[0;31m'; YELLOW=$'\e[1;33m'; NC=$'\e[0m'
+pass() { echo "  ${GREEN}[PASS]${NC} $*"; }
+fail() { echo "  ${RED}[FAIL]${NC} $*"; FAILED=1; }
+warn() { echo "  ${YELLOW}[WARN]${NC} $*"; }
 
 FAILED=0
 
@@ -28,28 +28,33 @@ echo "ftp-ldap smoke tests — host=$HOST user=$USER"
 echo "==============================================="
 echo
 
-# ---- 1. server is listening and speaks ProFTPD -------------------------------
+# ---- 1. server is listening and speaks ProFTPD (retry up to 15 seconds) -----
 echo "1. Server banner on port 21..."
-BANNER=$(python3 -c "
+BANNER=""
+for i in $(seq 1 15); do
+    BANNER=$(python3 -c "
 import socket, sys
 s = socket.socket()
-s.settimeout(3)
+s.settimeout(2)
 try:
     s.connect(('$HOST', 21))
     print(s.recv(200).decode('utf-8', 'replace').strip())
 except Exception as e:
     print('ERROR:', e, file=sys.stderr)
     sys.exit(1)
-" 2>&1)
+" 2>&1) && break
+    sleep 1
+done
 
 if [[ "$BANNER" == *ProFTPD* ]]; then
     pass "Banner: $BANNER"
 elif [[ "$BANNER" == *vsFTPd* ]]; then
     warn "Banner shows vsFTPd — is this the old branch? Banner: $BANNER"
 else
-    fail "No banner or wrong response: $BANNER"
-    fail "  Likely the container isn't running yet. Try:"
+    fail "No banner after 15s retry: $BANNER"
+    fail "  Likely the container isn't running. Try:"
     fail "    systemctl --user status vsftpd.service"
+    fail "    journalctl --user -u vsftpd.service --no-pager -n 30"
     exit 1
 fi
 echo

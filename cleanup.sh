@@ -3,7 +3,7 @@
 # and data dir so you can reinstall from scratch. Interactive confirmation.
 set -u
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+GREEN=$'\e[0;32m'; YELLOW=$'\e[1;33m'; RED=$'\e[0;31m'; NC=$'\e[0m'
 
 # Escape any dangling cwd before we start deleting things
 cd "$HOME" || cd /
@@ -26,25 +26,25 @@ echo
 read -r -p "Type 'yes' to proceed: " answer
 [ "$answer" = "yes" ] || { echo "Aborted."; exit 0; }
 
-echo -e "${GREEN}==>${NC} Stopping service..."
+echo "${GREEN}==>${NC} Stopping service..."
 systemctl --user stop vsftpd.service ftp.service 2>/dev/null || true
 systemctl --user disable vsftpd.service ftp.service 2>/dev/null || true
 
-echo -e "${GREEN}==>${NC} Removing Quadlet units..."
+echo "${GREEN}==>${NC} Removing Quadlet units..."
 rm -f "$HOME/.config/containers/systemd/vsftpd.container"
 rm -f "$HOME/.config/containers/systemd/ftp.container"
 rm -f "$HOME/.config/containers/systemd/proftpd.container"
 systemctl --user daemon-reload
 
-echo -e "${GREEN}==>${NC} Removing containers..."
+echo "${GREEN}==>${NC} Removing containers..."
 podman ps -a --format '{{.Names}}' 2>/dev/null | \
     grep -iE '^(ftp|vsftpd|proftpd)' | xargs -r podman rm -f 2>/dev/null || true
 
-echo -e "${GREEN}==>${NC} Removing images..."
+echo "${GREEN}==>${NC} Removing images..."
 podman images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | \
     grep -iE '(vsftpd|proftpd|ftp-ldap)' | xargs -r podman rmi -f 2>/dev/null || true
 
-echo -e "${GREEN}==>${NC} Removing config + data..."
+echo "${GREEN}==>${NC} Removing config + data..."
 rm -f "$HOME/ftp.env" "$HOME/ldap.conf"
 
 # The data dir is mode 700 owned by the container's ftpuser subuid,
@@ -57,5 +57,5 @@ fi
 rmdir "$HOME/data" 2>/dev/null || true
 
 echo
-echo -e "${GREEN}Clean.${NC} To reinstall:"
+echo "${GREEN}Clean.${NC} To reinstall:"
 echo "    cd ~/ftp-ldap && ./install.sh"
