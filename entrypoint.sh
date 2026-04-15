@@ -46,7 +46,7 @@ if [ "${FTPS_ENABLE:-NO}" = "YES" ]; then
   TLSProtocol            TLSv1.2 TLSv1.3
   TLSRSACertificateFile  $CERT
   TLSRSACertificateKeyFile $CERT
-  TLSOptions             NoCertRequest NoSessionReuseRequired
+  TLSOptions             NoSessionReuseRequired
   TLSVerifyClient        off
 </IfModule>
 EOF
