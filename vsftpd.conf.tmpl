@@ -12,6 +12,9 @@ virtual_use_local_privs=YES
 local_root=/home/vsftpd
 
 pam_service_name=vsftpd
+# Required for compatibility with our libpam-ldapd + nslcd PAM stack.
+# Without this, vsftpd's forked session worker crashes on teardown.
+one_process_model=YES
 
 chroot_local_user=YES
 allow_writeable_chroot=YES
