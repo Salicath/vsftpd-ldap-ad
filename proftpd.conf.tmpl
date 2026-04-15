@@ -30,6 +30,11 @@ MasqueradeAddress     ${PASV_ADDRESS}
 SystemLog             none
 TransferLog           none
 
+# Temporary LDAP tracing for debugging — read with:
+#   podman exec vsftpd-ldap cat /tmp/proftpd-trace.log
+TraceLog              /tmp/proftpd-trace.log
+Trace                 ldap:20 auth:10
+
 <IfModule mod_ldap.c>
   LDAPServer          ldap://${AD_HOST}
   LDAPBindDN          "${AD_BIND_DN}" "${AD_BIND_PW}"
