@@ -1,42 +1,40 @@
-# vsftpd-ldap-ad
+# vsftpd-ldap-ad → **ftp-ldap** (ProFTPD edition)
 
-**Rootless Podman vsftpd with real Active Directory group-membership access control.**
+**Rootless Podman FTP container with real Active Directory group-membership access control and optional FTPS.**
 
-A minimal `debian:trixie-slim` container that runs [vsftpd](https://security.appspot.com/vsftpd.html) authenticating against a Windows Active Directory, and **restricts login to members of a single AD group**. Designed to run rootless under Podman as a systemd Quadlet on modern Linux hosts.
+A minimal `debian:trixie-slim` container running [ProFTPD](http://www.proftpd.org/) with `mod_ldap`, authenticating against a Windows Active Directory and **restricting login to members of a single AD group**. Designed to run rootless under Podman as a systemd Quadlet on modern Linux hosts.
 
-~40 MB image. ~60 lines of config across 5 files. No custom PAM logic, no AD schema changes, no POSIX attributes required on your users.
+> **Note on the repo name:** this project started life as a vsftpd build and ran into a reproducible vsftpd bug on modern kernels. The working implementation is now ProFTPD; the repo name and Quadlet filename (`vsftpd.container`) are kept for continuity. See the "History" section at the bottom.
+
+~60 MB image. ~80 lines of config across 5 files. No POSIX attributes required on your AD users. Group filter is enforced inside the directory, not in PAM or NSS.
 
 ---
 
 ## Why this exists
 
-If you've tried to get Dockerized vsftpd + LDAP working with a "members of group X only" restriction, you've probably hit one of these walls:
+If you've tried to get Dockerised FTP + LDAP working with a "members of group X only" restriction against Active Directory, you've probably hit one of these walls:
 
 | Project | Problem |
 |---|---|
-| [`docker.io/undying/vsftpd`](https://hub.docker.com/r/undying/vsftpd) | Uses legacy `libpam-ldap`, whose PAM account stack has `[success=1 default=ignore]` for `pam_ldap.so`. Group denials are silently dropped. **No `LDAP_FILTER`, `pam_filter`, or `pam_groupdn` variant fixes this.** |
-| [`joharper54SEG/Docker-vsftp-ldap`](https://github.com/joharper54SEG/Docker-vsftp-ldap) | Purpose-built for this but is based on Ubuntu 18.04 (EOL), vendors an ancient `confd` binary, and requires AD users to have POSIX attributes (`uidNumber`, `loginShell`, etc.) populated. |
-| `fauria/vsftpd` | Dead since 2017. No LDAP support. |
-| `delfer/alpine-ftp-server`, `atmoz/sftp` | Local users only, no directory integration. |
+| [`docker.io/undying/vsftpd`](https://hub.docker.com/r/undying/vsftpd) | Uses legacy `libpam-ldap`, whose PAM account stack has `[success=1 default=ignore]` for `pam_ldap.so`. Group denials are silently dropped. No combination of `LDAP_FILTER`, `pam_filter` or `pam_groupdn` fixes this. |
+| [`joharper54SEG/Docker-vsftp-ldap`](https://github.com/joharper54SEG/Docker-vsftp-ldap) | Ubuntu 18.04 (EOL), vendors an ancient `confd` binary, and requires AD users to have POSIX attributes populated. |
+| A custom vsftpd + `libpam-ldapd` + nslcd build | Works for auth on paper, but **vsftpd segfaults on post-session cleanup** in modern kernels (reproducible in both Debian bookworm's 3.0.3 and trixie's 3.0.5). This repo's git history contains the full diagnostic journey. |
 
-The widely-assumed "just set a `memberOf` filter" doesn't work on vsftpd because vsftpd's PAM service doesn't enforce group checks — PAM does, and PAM's legacy LDAP module is abandonware.
-
-**This project solves the problem at a different layer: the `nss-pam-ldapd` daemon.** By putting the group filter in `nslcd`'s `filter passwd` directive, non-members become invisible to the entire PAM stack. When vsftpd asks PAM "does user X exist?", the answer is simply "no" for anyone outside the group. No legacy library bugs, no `default=ignore` footguns, no workarounds in vsftpd itself.
+**ProFTPD's `mod_ldap` solves the problem cleanly**: AD group membership is checked as part of the user-search filter directly against the directory. Non-members simply don't match, so there's no "login denied" code path in the FTP server itself — the search returns nothing, and ProFTPD reports "user not found." No nslcd tricks, no broken PAM modules, no segfaults.
 
 ---
 
 ## Features
 
-- ✅ **AD / LDAP authentication** via `nss-pam-ldapd` (the modern `libpam-ldapd`, not legacy `libpam-ldap`)
-- ✅ **True group-based access control** — non-members receive `530 Login incorrect`, enforced by the LDAP directory itself
-- ✅ **Instant enforcement** — removing a user from the group in AD rejects their next login with no cache delay
+- ✅ **Active Directory authentication** via ProFTPD `mod_ldap` (no nslcd, no PAM surgery)
+- ✅ **True group-based access control** — non-members receive `530 Login incorrect`, enforced at the LDAP search level
+- ✅ **Instant enforcement** — removing a user from the group in AD rejects their next login with no cache
+- ✅ **No AD schema changes** — works with stock AD; no POSIX attributes (`uidNumber`, `loginShell`, `homeDirectory`) required on users
+- ✅ **Optional FTPS (TLS 1.2+)** — one env var flip; auto-generates a self-signed cert for dev/lab, or mount a CA-issued cert (e.g. from Active Directory Certificate Services)
 - ✅ **Rootless Podman** — runs under a normal user, managed by `systemd --user` via a Quadlet
-- ✅ **No AD schema changes** — works with out-of-the-box Active Directory; no need to populate POSIX attributes on users
-- ✅ **Defense in depth** — bind-mount data directory is auto-locked to `chmod 700` owned by the container's subuid at startup, so local host users can't bypass the network-level ACL by reading files directly
+- ✅ **Defence in depth** — bind-mounted data dir is auto-locked to `chmod 700` owned by the container's subuid, so local host users without sudo can't bypass the network-level ACL
 - ✅ **Passive FTP mode** — configurable PASV port range and advertised address (for NAT)
-- ✅ **Optional FTPS (TLS)** — single env var flip; auto-generates a self-signed cert for dev/lab, or mount a CA-issued cert (e.g. from Active Directory Certificate Services) for production
-- ✅ **Nested group support** — documented one-line change for AD `LDAP_MATCHING_RULE_IN_CHAIN` if your FTP group is a group of groups
-- ✅ **Small and inspectable** — 5 config files, a 30-line entrypoint, a 20-line Containerfile
+- ✅ **Nested group support** — documented one-line change for AD `LDAP_MATCHING_RULE_IN_CHAIN` if the FTP group contains subgroups
 
 ---
 
@@ -44,16 +42,15 @@ The widely-assumed "just set a `memberOf` filter" doesn't work on vsftpd because
 
 ### Prerequisites
 
-- Linux host with `podman` ≥ 4.4 and `systemd --user` (tested on Rocky Linux 10, should work on Fedora, Ubuntu 22.04+, Debian 12+)
+- Linux host with `podman` ≥ 4.4 and `systemd --user` (tested on Rocky Linux 10; also works on Fedora, Debian 12+, Ubuntu 22.04+)
 - Network reachability from the host to your AD/LDAP server on port 389
-- A read-only bind account in AD (a normal user account is enough)
+- A read-only bind account in AD (a normal, unprivileged domain user is enough)
 - An AD security group whose members you want to allow
 - Rootless binding to port 21 enabled on the host (see below)
 
 ### One-time host setup
 
 ```bash
-# Allow rootless containers to bind to port 21
 sudo sysctl -w net.ipv4.ip_unprivileged_port_start=21
 echo "net.ipv4.ip_unprivileged_port_start=21" | sudo tee /etc/sysctl.d/99-ftp.conf
 ```
@@ -85,7 +82,7 @@ loginctl enable-linger $USER
 
 Verify:
 ```bash
-systemctl --user status vsftpd.service
+systemctl --user status vsftpd.service --no-pager
 ```
 
 ---
@@ -110,14 +107,14 @@ All runtime configuration lives in `~/ftp.env`. Nothing goes in the Quadlet unit
 
 Set `FTPS_ENABLE=YES` in `~/ftp.env` and restart the service. The entrypoint will:
 
-1. Check for a mounted cert at `/etc/vsftpd/vsftpd.pem` (see Quadlet comment for the volume mount line).
+1. Check for a mounted cert at `/etc/proftpd/ssl/proftpd.pem` (see Quadlet comment for the volume mount line).
 2. If no cert is mounted, auto-generate a self-signed one at container startup. Fine for labs, dev, or any environment where the TLS config itself needs to be demonstrable but the cert's trust anchor isn't critical.
-3. Append the TLS configuration block to `/etc/vsftpd.conf` — forces TLS on both control and data channels (`force_local_logins_ssl=YES`, `force_local_data_ssl=YES`), TLS 1.2 only, `HIGH:!aNULL:!MD5` ciphers.
+3. Append a TLS block to `/etc/proftpd/proftpd.conf` — forces TLS on both control and data channels (`TLSRequired on`), TLS 1.2 / 1.3 only.
 
 After enabling, clients must use **explicit FTPS** (the `AUTH TLS` command on the control channel). Examples:
 
 ```bash
-curl -k --ftp-ssl --user 'alice:password' ftp://ftp.example.local/   # -k to accept self-signed
+curl -k --ssl-reqd --user 'alice:password' ftp://ftp.example.local/   # -k accepts self-signed
 lftp -u alice,password -e 'set ftp:ssl-force yes; ls; bye' ftp.example.local
 ```
 
@@ -125,25 +122,25 @@ In FileZilla: **Protocol: FTP → Encryption: Require explicit FTP over TLS**.
 
 **To use a CA-issued cert instead of the auto-generated one** (recommended for production):
 
-1. Put your cert+key concatenated in one PEM file at `~/certs/vsftpd.pem` on the host
-2. `chmod 600 ~/certs/vsftpd.pem`
-3. Uncomment the `Volume=%h/certs/vsftpd.pem:/etc/vsftpd/vsftpd.pem:Z,ro` line in `~/.config/containers/systemd/vsftpd.container`
+1. Put your cert+key concatenated in one PEM file at `~/certs/proftpd.pem` on the host
+2. `chmod 600 ~/certs/proftpd.pem`
+3. Uncomment the `Volume=...proftpd.pem...` line in `~/.config/containers/systemd/vsftpd.container`
 4. `systemctl --user daemon-reload && systemctl --user restart vsftpd.service`
 
-The container detects the mounted cert automatically and skips the self-signed generation step. Internal enterprise deployments typically issue this cert from **Active Directory Certificate Services** (free, included with Windows Server), so that domain-joined clients automatically trust it with no cert warnings.
+Internal enterprise deployments typically issue this cert from **Active Directory Certificate Services** (free, included with Windows Server), so domain-joined clients automatically trust it with no cert warnings.
 
 ### For nested AD groups
 
-Active Directory `memberOf` does not traverse nested groups by default. If your FTP group contains other groups (rather than users directly), edit `nslcd.conf.tmpl` and swap:
+Active Directory `memberOf` does not traverse nested groups by default. If your FTP group contains other groups (rather than users directly), edit `proftpd.conf.tmpl` and swap:
 
 ```
-filter passwd (&(objectClass=user)(memberOf=${AD_GROUP_DN}))
+LDAPUsers "${AD_BASE_DN}" "(&(objectClass=user)(sAMAccountName=%u)(memberOf=${AD_GROUP_DN}))" ...
 ```
 
 for:
 
 ```
-filter passwd (&(objectClass=user)(memberOf:1.2.840.113556.1.4.1941:=${AD_GROUP_DN}))
+LDAPUsers "${AD_BASE_DN}" "(&(objectClass=user)(sAMAccountName=%u)(memberOf:1.2.840.113556.1.4.1941:=${AD_GROUP_DN}))" ...
 ```
 
 That OID is `LDAP_MATCHING_RULE_IN_CHAIN` — it instructs the DC to walk the group hierarchy transitively. Rebuild the image after changing the template.
@@ -152,60 +149,39 @@ That OID is `LDAP_MATCHING_RULE_IN_CHAIN` — it instructs the DC to walk the gr
 
 ## How it works
 
-### The architecture
-
-```
-    FTP client
-        │
-        │  control channel: port 21
-        ▼
-┌─────────────────┐
-│     pasta       │   (rootless podman's network backend, forwards host:21 → container:21)
-└────────┬────────┘
-         │
-┌────────▼────────────────────────────────────────────┐
-│ Container (debian:trixie-slim, ~40 MB)              │
-│                                                     │
-│   vsftpd ──PAM──▶ pam_ldap.so ──unix socket──▶ nslcd│
-│     │                                          │   │
-│     │                                          ▼   │
-│     │                                    ┌──────────┤
-│     │                                    │  LDAP    │
-│     │                                    │  query   │
-│     │                                    │  with    │
-│     │                                    │  filter  │
-│     └── bind mount /home/vsftpd           │  passwd  │
-│         (host: ~/data/ftp, mode 700,      │  ...     │
-│         owned by container's ftpuser)     └──┬───────┤
-└───────────────────────────────────────────────│──────┘
-                                                │
-                                                ▼
-                                       Active Directory (LDAP)
-```
-
 ### The access-control flow
 
-1. Client connects to vsftpd on port 21.
-2. Client sends `USER <name>` and `PASS <password>`.
-3. vsftpd calls PAM with service name `vsftpd`. Our `pam.d/vsftpd` is three lines, all `required`:
+1. Client connects to ProFTPD on port 21.
+2. Client sends `USER <name>` / `PASS <password>`.
+3. `mod_ldap` (configured with `LDAPAuthBinds on`) binds to AD as the read-only service account and runs a subtree search with the filter:
    ```
-   auth     required pam_ldap.so
-   account  required pam_ldap.so
-   session  required pam_permit.so
+   (&(objectClass=user)(sAMAccountName=<name>)(memberOf=CN=FTP-Users,...))
    ```
-4. `pam_ldap.so` (from `libpam-ldapd`) forwards the auth and account checks to `nslcd` via a Unix socket.
-5. `nslcd` applies the filter from `nslcd.conf`:
-   ```
-   filter passwd (&(objectClass=user)(memberOf=CN=FTP-Users,...))
-   ```
-6. If the user is not in the group, `nslcd` returns nothing → PAM returns `PAM_USER_UNKNOWN` → vsftpd sends `530 Login incorrect`.
-7. If the user is in the group, PAM auth succeeds. vsftpd's `guest_enable=YES` then remaps the session to a local `ftpuser` account (uid 1000) and chroots into `/home/vsftpd`, which is bind-mounted to the host's `~/data/ftp`.
+4. **If the user isn't in the group, the filter doesn't match, the search returns nothing, and ProFTPD sends `530 Login incorrect`.**
+5. If the filter does match, ProFTPD takes the returned DN, unbinds, and re-binds as that DN with the user-supplied password. Successful bind = authenticated.
+6. `LDAPForceDefaultUID/GID on` maps every authenticated AD user to local `ftpuser` (uid 1000). The session chroots into `/home/vsftpd`, which is bind-mounted to `~/data/ftp` on the host.
 
-### Why `primaryGroupID` for uidNumber
+The access decision happens in the LDAP search — there's no group-membership logic in the FTP server or PAM itself. This is what makes the approach clean.
 
-`nslcd` needs to return *some* numeric uid to satisfy NSS lookups. AD users don't have a `uidNumber` attribute by default (that requires the deprecated "Identity Management for UNIX" role). We could use the `objectSid → uidNumber` mapping trick, but that needs the domain SID as a runtime variable.
+### Why `LDAPAttr uid sAMAccountName` / `gidNumber primaryGroupID`
 
-Instead, we use `map passwd uidNumber primaryGroupID`. Every domain user has `primaryGroupID=513`, which is always numeric and always present. It doesn't matter that every user reports the same uid — vsftpd throws the value away in step 7 above when it remaps to `ftpuser`.
+`mod_ldap` parses returned LDAP entries looking for POSIX attributes (`uid`, `gidNumber`, `homeDirectory`, `loginShell`) to build a Unix user record. AD users don't have these — they have `sAMAccountName`, `primaryGroupID`, `unixHomeDirectory` (sometimes), etc. Without the attribute mappings, the search matches but the result is dropped as "unparseable" with the misleading error "no such user found."
+
+- `LDAPAttr uid sAMAccountName` — use sAMAccountName where mod_ldap expects `uid`
+- `LDAPAttr gidNumber primaryGroupID` — every domain user has `primaryGroupID=513`, which gives mod_ldap a number to read (and which `LDAPForceDefaultGID` then overwrites)
+
+### Why `REFERRALS off` in `/etc/ldap/ldap.conf`
+
+AD subtree searches against the domain root DN return **referral entries** alongside real results, pointing at `CN=Configuration`, `DomainDnsZones.h3.local`, `ForestDnsZones.h3.local`, etc. OpenLDAP's client library (used by mod_ldap) chases these by default. From inside a container those hostnames aren't resolvable, each referral waits for a DNS timeout, and the whole search hangs. Disabling referral chasing at the OpenLDAP client level via `/etc/ldap/ldap.conf REFERRALS off` fixes this for any app that uses libldap in the container. This is a known issue — see [proftpd/mod_ldap#4](https://github.com/proftpd/mod_ldap/issues/4).
+
+### Defence in depth
+
+| Layer | What it protects | How |
+|---|---|---|
+| Network | Cross-site traffic | IPsec tunnel at L3 (outside this container's scope) |
+| Transport | Same-LAN traffic, admin access | FTPS via `mod_tls` (`FTPS_ENABLE=YES`) |
+| Application | Who can log in at all | AD group filter via `mod_ldap` |
+| Filesystem | Local shell bypass of the FTP service | Bind mount at mode 700 owned by container subuid — local users without sudo get Permission denied on the data directory |
 
 ---
 
@@ -237,30 +213,30 @@ curl --user 'alice:password' ftp://ftp.example.local/
 # curl: (67) Access denied: 530
 ```
 
-No container restart needed. Re-adding her to the group restores access on the next login. `nslcd` has no meaningful positive cache for this query, so enforcement is effectively instant.
+No container restart needed. Re-adding her to the group restores access on the next login. There is no positive cache for this lookup; enforcement is effectively instant.
 
-### Local filesystem bypass is blocked
+### Filesystem bypass is blocked
 
 ```bash
 ls -la ~/data/ftp/
 # ls: cannot open directory '/home/you/data/ftp/': Permission denied
 ```
 
-The bind mount is owned by the container's `ftpuser` subuid with mode `700`. Only the container (through its user namespace) can read the data. A local shell user without sudo cannot bypass the AD group filter by reading files directly. The trust boundary is "anyone with sudo on the host can read everything" — which is true of every system and cannot be engineered away.
+The bind mount is owned by the container's `ftpuser` subuid with mode `700`. Only the container (via its user namespace) can read the data.
 
 ---
 
 ## Security considerations
 
-**TLS is opt-in via `FTPS_ENABLE=YES`.** When disabled, the FTP protocol transmits credentials and data in the clear — only acceptable on trusted networks (isolated VLAN, IPsec/VPN tunnel between sites, etc.). When enabled, use a CA-issued cert for any production scenario; the auto-generated self-signed cert is for lab/dev use where demonstrating TLS configuration matters more than the trust anchor.
+**TLS is opt-in via `FTPS_ENABLE=YES`.** When disabled, the FTP protocol transmits credentials and data in the clear — only acceptable on trusted networks (isolated VLAN, IPsec/VPN tunnel between sites, etc.). When enabled, use a CA-issued cert for any production scenario; the auto-generated self-signed cert is for lab/dev use.
 
-**Trust boundary:** the host's root user (or anyone with sudo) can always read the data directory by entering the container's user namespace. This is inherent to rootless containers and not a bug.
+**Trust boundary:** the host's root user (or anyone with sudo) can always read the data directory by entering the container's user namespace. This is inherent to rootless containers and not a bug — don't give sudo to people who shouldn't read FTP data.
 
-**The bind account:** use a dedicated read-only LDAP user. A normal domain user account with no admin rights is sufficient. Do not use a Domain Admin.
+**The bind account:** use a dedicated read-only LDAP user. A normal, unprivileged domain user is sufficient. Do not use a Domain Admin.
 
 **Password in `~/ftp.env`:** the environment file contains the bind DN password in plaintext. `chmod 600 ~/ftp.env` is mandatory; consider using `systemd-creds` or a secrets backend for production deployments.
 
-**No rate limiting:** vsftpd has `max_login_fails` but brute-force protection should still be layered on top (fail2ban, firewall rate limits, or a reverse proxy).
+**No rate limiting:** ProFTPD has `MaxLoginAttempts`, but brute-force protection should still be layered on top (fail2ban, firewall rate limits, or a reverse proxy).
 
 ---
 
@@ -274,34 +250,46 @@ journalctl --user -u vsftpd.service --no-pager -n 80
 
 | Symptom | Likely cause |
 |---|---|
-| `nslcd: bind failed` | `AD_BIND_DN` or `AD_BIND_PW` is wrong. Verify from the host with `ldapsearch -x -H ldap://$AD_HOST -D "$AD_BIND_DN" -w "$AD_BIND_PW" -b "$AD_BASE_DN" -s base`. |
-| `Main process exited, code=exited, status=139` | vsftpd segfault — almost always a specific distro's vsftpd build. This image uses Debian Trixie's vsftpd 3.0.5 to avoid a known crash in Bookworm's 3.0.3. |
-| `curl: (67) 530` for a group member | The `AD_GROUP_DN` in `ftp.env` does not exactly match the group's `distinguishedName` in AD. Copy it from AD Users & Computers → the group → Attribute Editor → `distinguishedName`. |
-| `curl` hangs forever on `LIST` after login | PASV data channel is broken. `PASV_ADDRESS` must be the IP the client uses to reach the host, and the PASV port range (50000-50100) must be open on any firewall between client and host. |
-| `[500 OOPS: vsftpd: refusing to run with writable root inside chroot()`] | `allow_writeable_chroot=YES` is already set in this image's `vsftpd.conf.tmpl`, so you shouldn't hit this. If you do, the bind mount's mode is probably broken — the entrypoint auto-chowns it to `700` + `ftpuser` on startup. |
+| `fatal: unknown configuration directive '...'` | Template rendered but ProFTPD doesn't recognise that directive in this version. Check the directive name against the version's mod_ldap/mod_tls docs. |
+| `curl: (67) Access denied: 530` for a group member | The `AD_GROUP_DN` in `ftp.env` does not exactly match the group's `distinguishedName` in AD. Copy from AD Users & Computers → the group → Attribute Editor → `distinguishedName`. |
+| `no such user found` in the ProFTPD LDAP log | mod_ldap couldn't parse the returned LDAP entry as a user record. Usually a missing `LDAPAttr` mapping (uid or gidNumber). |
+| LDAP search times out | Referral chasing is enabled. `/etc/ldap/ldap.conf` should contain `REFERRALS off` (the Containerfile adds this). |
+| `AuthOrder: warning: module 'mod_ldap.c' not loaded` | `proftpd-mod-ldap` isn't installed, or mod_ldap isn't explicitly loaded. The Containerfile installs it and the template has `LoadModule mod_ldap.c`. |
+| `response reading failed (errno 115)` on FTPS | `mod_tls` isn't loaded. Install `proftpd-mod-crypto` and ensure `LoadModule mod_tls.c` is in the config. |
+| `curl` hangs forever on `LIST` after login | PASV data channel broken. `PASV_ADDRESS` must be the IP the client uses to reach this host, and the PASV port range (default 50000-50100) must be open on any firewall between client and host. |
 
 ---
 
 ## Requirements
 
-- **Host**: any modern Linux with `podman` ≥ 4.4, systemd user sessions, and the `user_allow_other` FUSE option (default on most distros)
-- **AD / LDAP**: Active Directory (any reasonably modern version), or an LDAP directory with `memberOf` overlay. OpenLDAP with `memberOf` overlay enabled also works.
-- **Network**: port 389 (LDAP) to the directory, port 21 and the configured PASV range (default 50000-50100) between clients and the host
+- **Host**: any modern Linux with `podman` ≥ 4.4, systemd user sessions
+- **AD / LDAP**: Active Directory (any reasonably modern version), or an LDAP directory with `memberOf` overlay
+- **Network**: port 389 (LDAP) to the directory, port 21 and the configured PASV range between clients and the host
 
 ---
 
 ## Roadmap
 
-This project is intentionally minimal. The following are deliberate non-goals of the v1 — but candidates for future work if there's demand:
-
-- [x] **FTPS** (explicit TLS on the FTP protocol) — shipped. Enable with `FTPS_ENABLE=YES`, auto-generates self-signed or uses a mounted cert.
-- [ ] **SFTP transport** — a sibling Containerfile using `openssh-server` + `pam_ldapd` would give you the same group filter with SSH-based transport. More production-friendly than FTP.
-- [ ] **Multiple groups** — allow login if user is in any of a list of groups
+- [x] **AD group filtering** — shipped
+- [x] **FTPS (explicit TLS)** — shipped, enable with `FTPS_ENABLE=YES`
+- [x] **Defense in depth filesystem** — shipped, entrypoint auto-locks bind mount
+- [ ] **SFTP transport** — a sibling Containerfile using `openssh-server` with LDAP auth; more production-friendly than FTP/FTPS for many use cases
+- [ ] **Multiple groups** — allow login if user is a member of any of a list of groups
 - [ ] **Per-group virtual roots** — different chroot per AD group
 - [ ] **LDAPS** for the bind itself (currently plain LDAP on port 389)
-- [ ] **Prometheus metrics** exporter sidecar
+- [ ] **Mount integration with Active Directory Certificate Services** — documented workflow for issuing a cert to the FTP host from the internal CA
 
-Contributions welcome.
+---
+
+## History
+
+This project has two architectures recorded in its git history:
+
+1. **vsftpd + libpam-ldapd + nslcd** (preserved in branch `vsftpd-legacy`) — an elegant solution that used the `filter passwd (&(objectClass=user)(memberOf=...))` nslcd trick to make non-members invisible at the NSS layer. The approach works on paper (and is well-documented in the git history), but vsftpd itself crashed on every session teardown in our specific environment (Debian's 3.0.3 and 3.0.5, same code offset, reproducible on every session). The root cause was never pinned down; likely an interaction between vsftpd's privilege-separation model, `libpam-ldapd`'s session handling, and modern glibc/kernel behaviour.
+
+2. **ProFTPD + `mod_ldap`** (current `main`) — replaces the entire stack. `mod_ldap` does AD group filtering natively via the user-search filter; no nslcd, no PAM tricks. Works cleanly and doesn't crash.
+
+The vsftpd approach is still an interesting reference if you're doing a similar integration with a different daemon, or if you're stuck on a vsftpd version where the crash doesn't manifest. The `vsftpd-legacy` branch is preserved for that purpose.
 
 ---
 
@@ -309,7 +297,6 @@ Contributions welcome.
 
 If this project doesn't fit, here are the other options worth considering:
 
-- **[ProFTPD](http://www.proftpd.org/)** with `mod_ldap` — ProFTPD has native `LDAPGroups` + `<Limit LOGIN><AllowGroup>` directives, so group filtering is a one-line config. Image: [`instantlinux/proftpd`](https://github.com/instantlinux/docker-tools/tree/main/images/proftpd). Cleanest alternative if you don't specifically need vsftpd.
 - **[Pure-FTPd](https://www.pureftpd.org/)** with `LDAPFilter` — supports `(memberOf=...)` filters directly in its LDAP config. Image: [`stilliard/pure-ftpd`](https://github.com/stilliard/docker-pure-ftpd).
 - **SSH/SFTP with SSSD on the host** — not in a container, but Red Hat's officially supported path for AD-authenticated file transfer on Linux. Heavier and requires joining the domain.
 
@@ -317,10 +304,10 @@ If this project doesn't fit, here are the other options worth considering:
 
 ## Credits & prior art
 
-- [`nss-pam-ldapd`](https://arthurdejong.org/nss-pam-ldapd/) by Arthur de Jong — the upstream project that makes this possible
-- [vsftpd](https://security.appspot.com/vsftpd.html) by Chris Evans
-- Jonathon Harper's [blog post and original repo](https://blog.jonathonharper.com/2019/10/25/ftp-docker-container-with-active-directory-authentication/) from 2019 were the first to document the nslcd approach for AD, and inspired this modern rewrite
-- The Debian maintainers of `libpam-ldapd` for keeping a sane, working PAM-LDAP path alive while the rest of the ecosystem moved on
+- [ProFTPD](http://www.proftpd.org/) and the [mod_ldap docs](http://www.proftpd.org/docs/contrib/mod_ldap.html)
+- [warlord0blog: ProFTPD and LDAP / Active Directory](https://warlord0blog.wordpress.com/2018/05/10/proftpd-and-ldap-active-directory/) — working AD config reference
+- [proftpd/mod_ldap#4](https://github.com/proftpd/mod_ldap/issues/4) — known AD referral issue
+- Jonathon Harper's [2019 blog post](https://blog.jonathonharper.com/2019/10/25/ftp-docker-container-with-active-directory-authentication/) — original inspiration for the vsftpd attempt and a good reference for the nslcd-based approach
 
 ---
 
