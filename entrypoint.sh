@@ -19,8 +19,8 @@ chmod 600 /etc/proftpd/proftpd.conf
 
 # Lock the bind-mounted data dir so local host users without sudo
 # can't bypass the AD group filter by reading files directly off disk.
-chown ftpuser:ftpuser /home/vsftpd
-chmod 700 /home/vsftpd
+chown ftpuser:ftpuser /srv/ftp
+chmod 700 /srv/ftp
 
 # Optional FTPS: enable by setting FTPS_ENABLE=YES in ftp.env.
 # Uses a mounted cert at /etc/proftpd/ssl/proftpd.pem if present,

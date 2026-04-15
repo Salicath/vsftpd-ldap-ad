@@ -8,7 +8,7 @@ You have a **Rocky Linux 10** VM where:
 
 1. You can log in as a non-root user (e.g. `h3`) with sudo rights.
 2. Podman is installed (`podman --version` should work).
-3. You have network access to the Windows DC on port 389 (test with `ping 192.168.1.21`).
+3. You have network access to the Windows DC on port 389 (test with `ping <DC-IP>`).
 
 If any of those are false, fix them before continuing.
 
@@ -27,11 +27,30 @@ Wait ~1-2 minutes for the first build. When you see:
 
 ```
 ================================================
-  SUCCESS — the FTP service is running.
+  SUCCESS — the ftp-ldap service is running.
 ================================================
 ```
 
 ...you're in.
+
+**If your network is NOT the h3.local lab** (e.g. on exam day):
+
+```bash
+nano ~/ftp.env
+```
+
+Change the two lines at the bottom:
+
+```
+AD_HOST=<the DC IP>
+PASV_ADDRESS=<this Rocky host's IP>
+```
+
+Save, then:
+
+```bash
+systemctl --user restart ftp-ldap.service
+```
 
 ## 2. Test it
 
@@ -44,13 +63,13 @@ Expected: four green `[PASS]` lines and `All tests passed. Ready for exam demo.`
 
 ## 3. Demo for the examiner
 
-Open two terminals (or just do these in sequence in one):
-
 ### Show a group member logging in
 
 ```bash
 curl --user 'test1:Kode1234!' ftp://192.168.1.13/
 ```
+
+(Replace `192.168.1.13` with whatever `PASV_ADDRESS` is in your `~/ftp.env`.)
 
 Should list the directory.
 
@@ -89,7 +108,7 @@ Most examiners will ask about encryption. Your answer is the two-layer story: **
 
 ```bash
 sed -i 's/FTPS_ENABLE=NO/FTPS_ENABLE=YES/' ~/ftp.env
-systemctl --user restart vsftpd.service
+systemctl --user restart ftp-ldap.service
 sleep 3
 curl -kv --ssl-reqd --user 'test1:Kode1234!' ftp://192.168.1.13/ 2>&1 | head -30
 ```
@@ -100,7 +119,7 @@ To turn it back off:
 
 ```bash
 sed -i 's/FTPS_ENABLE=YES/FTPS_ENABLE=NO/' ~/ftp.env
-systemctl --user restart vsftpd.service
+systemctl --user restart ftp-ldap.service
 ```
 
 ## 5. Start over completely from scratch
@@ -111,7 +130,6 @@ If something got messed up and you want to reinstall from nothing:
 cd ~/ftp-ldap
 ./cleanup.sh
 # type 'yes' when prompted
-cd ~/ftp-ldap
 ./install.sh
 ./test.sh
 ```
@@ -123,28 +141,26 @@ cd ~/ftp-ldap
 | `error getting current working directory` | You ran cleanup from inside `~/ftp-ldap` and your shell is in a deleted dir. Type `cd ~` and try again. |
 | `Permission denied` on `ls ~/data/ftp` | **Not a bug.** That's the filesystem lockdown doing its job. Explain it to the examiner. |
 | `curl: (7) Failed to connect` right after `install.sh` | The container is still starting. Wait 5 seconds and try again. |
-| `curl: (67) Access denied: 530` for a user you expect to work | That user isn't in `FTP-Brugere` in AD. Add them (or check the group DN in `~/ftp.env`). |
-| `Failed to start vsftpd.service` | Read the journal: `journalctl --user -u vsftpd.service --no-pager -n 50` |
+| `curl: (67) Access denied: 530` for a user you expect to work | That user isn't in the configured AD group. Add them (or check the group DN in `~/ftp.env`). |
+| `Failed to start ftp-ldap.service` | Read the journal: `journalctl --user -u ftp-ldap.service --no-pager -n 50` |
 | `./install.sh: Permission denied` | You forgot `chmod +x install.sh test.sh cleanup.sh` — run that again. |
 | `podman not found` | `sudo dnf install -y podman` then rerun `install.sh`. |
-| `rm: cannot remove '/home/h3/data/ftp'` (outside cleanup.sh) | Use `cleanup.sh` instead. Or `podman unshare rm -rf ~/data/ftp`. |
-| `mod_ldap.c not loaded` | The image build failed or is stale. Rerun `./install.sh` — it rebuilds. |
+| LDAP can't reach the DC | `ping <DC-IP>` to verify. Check that `AD_HOST` in `~/ftp.env` points at a reachable DC. |
 
-## If the exam uses a different network
+## If the exam uses a completely different lab
 
-Edit `~/ftp.env` and change the values that differ. Most likely:
+Edit `~/ftp.env` and change the values that differ. For a typical lab move:
 
-- `AD_HOST` — DC IP address
-- `AD_BASE_DN` — e.g. `DC=example,DC=local`
-- `AD_BIND_DN` — the service account DN
-- `AD_BIND_PW` — its password
-- `AD_GROUP_DN` — the group whose members are allowed
-- `PASV_ADDRESS` — the IP of *this host* as the FTP client sees it
+- `AD_HOST` — the new DC IP (biggest change)
+- `PASV_ADDRESS` — this host's new IP (biggest change)
+
+Less often:
+- `AD_BASE_DN`, `AD_BIND_DN`, `AD_BIND_PW`, `AD_GROUP_DN` — only if the AD structure itself differs
 
 Then:
 
 ```bash
-systemctl --user restart vsftpd.service
+systemctl --user restart ftp-ldap.service
 ./test.sh
 ```
 

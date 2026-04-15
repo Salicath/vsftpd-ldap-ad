@@ -10,12 +10,12 @@ cd "$HOME" || cd /
 
 cat <<EOF
 ${YELLOW}This will REMOVE:${NC}
-  - systemd user unit vsftpd.service (stop + unit file)
-  - container image  localhost/vsftpd-ldap
-  - running container vsftpd-ldap (if any)
+  - systemd user unit ftp-ldap.service (stop + unit file)
+  - container image  localhost/ftp-ldap
+  - running container ftp-ldap (if any)
   - config file      ~/ftp.env
   - data directory   ~/data/ftp (and all files inside)
-  - old cruft:       ~/ldap.conf
+  - old cruft:       ~/ldap.conf, old vsftpd.container, old vsftpd-ldap images
 
 It will NOT touch:
   - the cloned repo at ~/ftp-ldap (delete manually if you want)
@@ -26,11 +26,12 @@ echo
 read -r -p "Type 'yes' to proceed: " answer
 [ "$answer" = "yes" ] || { echo "Aborted."; exit 0; }
 
-echo "${GREEN}==>${NC} Stopping service..."
-systemctl --user stop vsftpd.service ftp.service 2>/dev/null || true
-systemctl --user disable vsftpd.service ftp.service 2>/dev/null || true
+echo "${GREEN}==>${NC} Stopping services..."
+systemctl --user stop ftp-ldap.service vsftpd.service ftp.service 2>/dev/null || true
+systemctl --user disable ftp-ldap.service vsftpd.service ftp.service 2>/dev/null || true
 
 echo "${GREEN}==>${NC} Removing Quadlet units..."
+rm -f "$HOME/.config/containers/systemd/ftp-ldap.container"
 rm -f "$HOME/.config/containers/systemd/vsftpd.container"
 rm -f "$HOME/.config/containers/systemd/ftp.container"
 rm -f "$HOME/.config/containers/systemd/proftpd.container"

@@ -48,24 +48,22 @@ done
 
 if [[ "$BANNER" == *ProFTPD* ]]; then
     pass "Banner: $BANNER"
-elif [[ "$BANNER" == *vsFTPd* ]]; then
-    warn "Banner shows vsFTPd — is this the old branch? Banner: $BANNER"
 else
     fail "No banner after 15s retry: $BANNER"
     fail "  Likely the container isn't running. Try:"
-    fail "    systemctl --user status vsftpd.service"
-    fail "    journalctl --user -u vsftpd.service --no-pager -n 30"
+    fail "    systemctl --user status ftp-ldap.service"
+    fail "    journalctl --user -u ftp-ldap.service --no-pager -n 30"
     exit 1
 fi
 echo
 
 # ---- 2. positive login -------------------------------------------------------
-echo "2. Can $USER log in (is a member of FTP-Brugere)..."
+echo "2. Can $USER log in (is a member of the AD group)..."
 if curl -sS --max-time 10 --user "$USER:$PASS_CRED" "ftp://$HOST/" > /dev/null 2>&1; then
     pass "$USER authenticated and got a directory listing."
 else
     fail "$USER login rejected. Possible causes:"
-    fail "  - $USER is NOT in CN=FTP-Brugere in AD"
+    fail "  - $USER is NOT in the configured AD group"
     fail "  - AD bind credentials in ~/ftp.env are wrong"
     fail "  - DC at $HOST can't reach AD on port 389"
 fi
@@ -97,10 +95,10 @@ echo
 # ---- summary ----------------------------------------------------------------
 echo "==============================================="
 if [ "$FAILED" -eq 0 ]; then
-    echo -e "${GREEN}All tests passed. Ready for exam demo.${NC}"
+    echo "${GREEN}All tests passed. Ready for exam demo.${NC}"
     exit 0
 else
-    echo -e "${RED}One or more tests failed. See above.${NC}"
-    echo "Diagnostic: journalctl --user -u vsftpd.service --no-pager -n 50"
+    echo "${RED}One or more tests failed. See above.${NC}"
+    echo "Diagnostic: journalctl --user -u ftp-ldap.service --no-pager -n 50"
     exit 1
 fi

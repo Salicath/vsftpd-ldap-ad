@@ -1,23 +1,23 @@
 [Unit]
-Description=FTP server (vsftpd with AD group filter via nslcd)
+Description=ftp-ldap (ProFTPD with AD group filter via mod_ldap)
 After=network-online.target
 Wants=network-online.target
 # Disable systemd's default restart rate-limit so the container can
-# restart as fast as possible after session-teardown crashes.
+# restart as fast as possible on failure.
 StartLimitIntervalSec=0
 
 [Container]
-ContainerName=vsftpd-ldap
-Image=localhost/vsftpd-ldap:latest
+ContainerName=ftp-ldap
+Image=localhost/ftp-ldap:latest
 
 PublishPort=21:21
 PublishPort=50000-50100:50000-50100
 
-Volume=%h/data/ftp:/home/vsftpd:Z
+Volume=%h/data/ftp:/srv/ftp:Z
 
 # Optional: mount a CA-issued cert to override the auto-generated self-signed one.
 # Requires FTPS_ENABLE=YES in ftp.env. Put cert+key in one PEM file.
-# Volume=%h/certs/vsftpd.pem:/etc/vsftpd/vsftpd.pem:Z,ro
+# Volume=%h/certs/proftpd.pem:/etc/proftpd/ssl/proftpd.pem:Z,ro
 
 EnvironmentFile=%h/ftp.env
 

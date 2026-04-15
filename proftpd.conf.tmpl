@@ -16,7 +16,7 @@ User                  ftpuser
 Group                 ftpuser
 
 # Chroot every session here, regardless of the user's nominal home dir.
-DefaultRoot           /home/vsftpd
+DefaultRoot           /srv/ftp
 
 AllowOverwrite        on
 AllowStoreRestart     on
@@ -32,7 +32,6 @@ MasqueradeAddress     ${PASV_ADDRESS}
 SystemLog             none
 TransferLog           none
 
-
 <IfModule mod_ldap.c>
   # RFC 4516 URL with '/??sub' forces subtree scope; without it mod_ldap
   # may fall back to a base-only search that returns nothing.
@@ -41,9 +40,9 @@ TransferLog           none
   LDAPAuthBinds       on
   LDAPSearchScope     subtree
 
-  # NB: referral chasing (which causes search timeouts against AD) is
-  # disabled system-wide via /etc/ldap/ldap.conf 'REFERRALS off' — see
-  # Containerfile. There is no proftpd directive for it.
+  # NB: AD referral chasing (which causes search timeouts) is disabled
+  # system-wide via /etc/ldap/ldap.conf 'REFERRALS off' — see Containerfile.
+  # ProFTPD itself has no directive for it.
 
   # The access-control line: only AD users in the target group match.
   # Third filter (uid-number) is required for syntactic completeness even
@@ -53,8 +52,7 @@ TransferLog           none
 
   # AD stores usernames in sAMAccountName and has no POSIX gidNumber;
   # map both so mod_ldap can parse the record as a user. primaryGroupID
-  # is always 513 on domain users, which is thrown away when
-  # LDAPForceDefaultGID kicks in below.
+  # is always 513 on domain users and is thrown away by LDAPForceDefaultGID.
   LDAPAttr            uid sAMAccountName
   LDAPAttr            gidNumber primaryGroupID
 
@@ -67,7 +65,7 @@ TransferLog           none
   # Synthesize a home-directory path so ProFTPD is happy; DefaultRoot above
   # overrides the actual chroot location.
   LDAPGenerateHomedir on
-  LDAPGenerateHomedirPrefix /home/vsftpd
+  LDAPGenerateHomedirPrefix /srv/ftp
   LDAPGenerateHomedirPrefixNoUsername on
 </IfModule>
 

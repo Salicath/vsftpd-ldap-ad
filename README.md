@@ -1,4 +1,4 @@
-# vsftpd-ldap-ad → **ftp-ldap** (ProFTPD edition)
+# ftp-ldap
 
 **Rootless Podman FTP container with real Active Directory group-membership access control and optional FTPS.**
 
@@ -6,7 +6,7 @@
 
 A minimal `debian:trixie-slim` container running [ProFTPD](http://www.proftpd.org/) with `mod_ldap`, authenticating against a Windows Active Directory and **restricting login to members of a single AD group**. Designed to run rootless under Podman as a systemd Quadlet on modern Linux hosts.
 
-> **Note on the repo name:** this project started life as a vsftpd build and ran into a reproducible vsftpd bug on modern kernels. The working implementation is now ProFTPD; the repo name and Quadlet filename (`vsftpd.container`) are kept for continuity. See the "History" section at the bottom.
+> **About the GitHub repo name:** this project is hosted at `github.com/Salicath/vsftpd-ldap-ad` for historical reasons — it started life as a vsftpd build. The working implementation is now ProFTPD; all current files, paths, and service names use `ftp-ldap`. See "History" at the bottom if you're curious.
 
 ~60 MB image. ~80 lines of config across 5 files. No POSIX attributes required on your AD users. Group filter is enforced inside the directory, not in PAM or NSS.
 
@@ -60,9 +60,9 @@ echo "net.ipv4.ip_unprivileged_port_start=21" | sudo tee /etc/sysctl.d/99-ftp.co
 ### Install
 
 ```bash
-git clone https://github.com/Salicath/vsftpd-ldap-ad.git
-cd vsftpd-ldap-ad
-podman build -t localhost/vsftpd-ldap .
+git clone https://github.com/Salicath/vsftpd-ldap-ad.git ftp-ldap
+cd ftp-ldap
+podman build -t localhost/ftp-ldap .
 
 # Configure
 cp ftp.env.example ~/ftp.env
@@ -74,9 +74,9 @@ mkdir -p ~/data/ftp
 
 # Install and start the Quadlet
 mkdir -p ~/.config/containers/systemd
-cp vsftpd.container ~/.config/containers/systemd/
+cp ftp-ldap.container ~/.config/containers/systemd/
 systemctl --user daemon-reload
-systemctl --user start vsftpd.service
+systemctl --user start ftp-ldap.service
 
 # Make it survive logout
 loginctl enable-linger $USER
@@ -84,7 +84,7 @@ loginctl enable-linger $USER
 
 Verify:
 ```bash
-systemctl --user status vsftpd.service --no-pager
+systemctl --user status ftp-ldap.service --no-pager
 ```
 
 ---
@@ -126,8 +126,8 @@ In FileZilla: **Protocol: FTP → Encryption: Require explicit FTP over TLS**.
 
 1. Put your cert+key concatenated in one PEM file at `~/certs/proftpd.pem` on the host
 2. `chmod 600 ~/certs/proftpd.pem`
-3. Uncomment the `Volume=...proftpd.pem...` line in `~/.config/containers/systemd/vsftpd.container`
-4. `systemctl --user daemon-reload && systemctl --user restart vsftpd.service`
+3. Uncomment the `Volume=...proftpd.pem...` line in `~/.config/containers/systemd/ftp-ldap.container`
+4. `systemctl --user daemon-reload && systemctl --user restart ftp-ldap.service`
 
 Internal enterprise deployments typically issue this cert from **Active Directory Certificate Services** (free, included with Windows Server), so domain-joined clients automatically trust it with no cert warnings.
 
@@ -161,7 +161,7 @@ That OID is `LDAP_MATCHING_RULE_IN_CHAIN` — it instructs the DC to walk the gr
    ```
 4. **If the user isn't in the group, the filter doesn't match, the search returns nothing, and ProFTPD sends `530 Login incorrect`.**
 5. If the filter does match, ProFTPD takes the returned DN, unbinds, and re-binds as that DN with the user-supplied password. Successful bind = authenticated.
-6. `LDAPForceDefaultUID/GID on` maps every authenticated AD user to local `ftpuser` (uid 1000). The session chroots into `/home/vsftpd`, which is bind-mounted to `~/data/ftp` on the host.
+6. `LDAPForceDefaultUID/GID on` maps every authenticated AD user to local `ftpuser` (uid 1000). The session chroots into `/srv/ftp`, which is bind-mounted to `~/data/ftp` on the host.
 
 The access decision happens in the LDAP search — there's no group-membership logic in the FTP server or PAM itself. This is what makes the approach clean.
 
@@ -247,7 +247,7 @@ The bind mount is owned by the container's `ftpuser` subuid with mode `700`. Onl
 Most problems show up in the systemd user journal:
 
 ```bash
-journalctl --user -u vsftpd.service --no-pager -n 80
+journalctl --user -u ftp-ldap.service --no-pager -n 80
 ```
 
 | Symptom | Likely cause |

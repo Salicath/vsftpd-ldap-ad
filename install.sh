@@ -16,7 +16,7 @@ command -v systemctl >/dev/null || die "systemctl not found. Is this systemd?"
 # must be run from inside the cloned repo
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO_DIR"
-[ -f Containerfile ] && [ -f vsftpd.container ] || \
+[ -f Containerfile ] && [ -f ftp-ldap.container ] || \
     die "Run this from inside the cloned ftp-ldap repo directory."
 
 # --- 1. unprivileged port 21 --------------------------------------------------
@@ -32,15 +32,16 @@ fi
 
 # --- 2. build the container image --------------------------------------------
 step "Building container image (first build downloads ~30 MB of packages)..."
-podman build -t localhost/vsftpd-ldap .
+podman build -t localhost/ftp-ldap .
 
 # --- 3. config file -----------------------------------------------------------
 if [ ! -f "$HOME/ftp.env" ]; then
     step "Creating $HOME/ftp.env from template..."
     cp ftp.env.example "$HOME/ftp.env"
     chmod 600 "$HOME/ftp.env"
-    warn "Defaults assume the h3.local lab. If your DC/host IPs differ,"
-    warn "edit $HOME/ftp.env now and rerun this script."
+    warn "Defaults assume the h3.local lab. For a different network, run:"
+    warn "    ./init.sh"
+    warn "to auto-discover the correct values, then rerun this script."
 else
     step "$HOME/ftp.env already exists — leaving it alone."
 fi
@@ -52,12 +53,12 @@ mkdir -p "$HOME/data/ftp"
 # --- 5. Quadlet unit ----------------------------------------------------------
 step "Installing Quadlet unit to $HOME/.config/containers/systemd/ ..."
 mkdir -p "$HOME/.config/containers/systemd"
-cp vsftpd.container "$HOME/.config/containers/systemd/"
+cp ftp-ldap.container "$HOME/.config/containers/systemd/"
 
 # --- 6. start the service -----------------------------------------------------
-step "Starting vsftpd.service (systemd user unit)..."
+step "Starting ftp-ldap.service (systemd user unit)..."
 systemctl --user daemon-reload
-systemctl --user restart vsftpd.service
+systemctl --user restart ftp-ldap.service
 
 # make it survive logout
 loginctl enable-linger "$USER" 2>/dev/null || true
@@ -68,7 +69,7 @@ PASV_ADDR="$(grep '^PASV_ADDRESS=' "$HOME/ftp.env" | cut -d= -f2 | tr -d '"' 2>/
 
 LISTENING=0
 for i in $(seq 1 20); do
-    if systemctl --user is-active --quiet vsftpd.service; then
+    if systemctl --user is-active --quiet ftp-ldap.service; then
         if python3 -c "
 import socket, sys
 s = socket.socket()
@@ -76,7 +77,7 @@ s.settimeout(2)
 try:
     s.connect(('$PASV_ADDR', 21))
     b = s.recv(200).decode('utf-8', 'replace')
-    sys.exit(0 if 'ProFTPD' in b or 'vsFTP' in b else 1)
+    sys.exit(0 if 'ProFTPD' in b else 1)
 except Exception:
     sys.exit(1)
 " 2>/dev/null; then
@@ -90,7 +91,7 @@ done
 if [ "$LISTENING" -eq 1 ]; then
     echo
     echo "${GREEN}================================================${NC}"
-    echo "${GREEN}  SUCCESS — the FTP service is running.${NC}"
+    echo "${GREEN}  SUCCESS — the ftp-ldap service is running.${NC}"
     echo "${GREEN}================================================${NC}"
     echo
     echo "Test it with:"
@@ -103,6 +104,6 @@ else
     echo
     warn "Service did not respond on port 21 after 20 seconds."
     warn "Last 30 log lines:"
-    journalctl --user -u vsftpd.service --no-pager -n 30 || true
+    journalctl --user -u ftp-ldap.service --no-pager -n 30 || true
     die "Investigate the log above and rerun this script."
 fi

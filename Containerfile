@@ -12,9 +12,9 @@ RUN apt-get update && \
         openssl && \
     rm -rf /var/lib/apt/lists/* && \
     userdel proftpd 2>/dev/null || true && \
-    useradd --uid 1000 --home-dir /home/vsftpd --no-create-home \
+    useradd --uid 1000 --home-dir /srv/ftp --no-create-home \
         --shell /usr/sbin/nologin ftpuser && \
-    install -d -o ftpuser -g ftpuser -m 755 /home/vsftpd && \
+    install -d -o ftpuser -g ftpuser -m 755 /srv/ftp && \
     install -d -o root -g root -m 755 /var/run/proftpd && \
     install -d /etc/ldap && \
     printf 'REFERRALS off\n' >> /etc/ldap/ldap.conf
