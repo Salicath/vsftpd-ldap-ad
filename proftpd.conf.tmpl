@@ -30,21 +30,23 @@ MasqueradeAddress     ${PASV_ADDRESS}
 SystemLog             none
 TransferLog           none
 
-# LDAP debug tracing — ProFTPD refuses TraceLog in world-writable dirs,
-# so /root (mode 700) is used. Read with:
-#   podman exec vsftpd-ldap cat /root/proftpd-trace.log
-TraceLog              /root/proftpd-trace.log
-Trace                 ldap:20
 
 <IfModule mod_ldap.c>
-  LDAPServer          ldap://${AD_HOST}
+  # Dedicated LDAP operation log — /root is mode 700 so proftpd accepts it.
+  LDAPLog             /root/proftpd-ldap.log
+
+  # RFC 4516 URL with '/??sub' forces subtree scope; without it mod_ldap
+  # may fall back to a base-only search that returns nothing.
+  LDAPServer          ldap://${AD_HOST}/??sub
   LDAPBindDN          "${AD_BIND_DN}" "${AD_BIND_PW}"
   LDAPAuthBinds       on
   LDAPSearchScope     subtree
 
   # The access-control line: only AD users in the target group match.
+  # Third filter (uid-number) is required for syntactic completeness even
+  # though LDAPForceDefaultUID means it's never actually queried.
   # For nested groups, swap memberOf= for memberOf:1.2.840.113556.1.4.1941:=
-  LDAPUsers           "${AD_BASE_DN}" "(&(sAMAccountName=%u)(memberOf=${AD_GROUP_DN}))"
+  LDAPUsers           "${AD_BASE_DN}" "(&(objectClass=user)(sAMAccountName=%u)(memberOf=${AD_GROUP_DN}))" "(&(objectClass=user)(uidNumber=%v))"
 
   # AD stores usernames in sAMAccountName and has no POSIX gidNumber;
   # map both so mod_ldap can parse the record as a user. primaryGroupID
