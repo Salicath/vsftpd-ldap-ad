@@ -23,6 +23,11 @@ envsubst '${PASV_ADDRESS} ${PASV_MIN_PORT} ${PASV_MAX_PORT}' \
 install -d -o nslcd -g nslcd -m 755 /var/run/nslcd
 install -d -o root  -g root  -m 755 /var/run/vsftpd/empty
 
+# Lock the bind-mounted data dir so local host users without sudo can't
+# bypass the AD group filter by reading files directly off disk.
+chown ftpuser:ftpuser /home/vsftpd
+chmod 700 /home/vsftpd
+
 nslcd
 
 echo "nslcd started; launching vsftpd"

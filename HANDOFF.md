@@ -76,6 +76,7 @@ Key tricks:
 - **`guest_enable=YES` + `guest_username=ftpuser`** — every authenticated AD user is remapped to a single local user (`ftpuser`, uid 1000). No per-user uid mapping, no AD POSIX attributes needed.
 - **`map passwd uidNumber primaryGroupID`** — nslcd needs to return *some* numeric uid to satisfy NSS. `primaryGroupID` is always `513` for domain users; the value is irrelevant because vsftpd throws it away on the remap.
 - **Rootless Podman**: port 21 is made unprivileged via sysctl; pasta forwards 21 and 50000-50100 from the host netns to the container.
+- **Defense in depth**: `entrypoint.sh` chowns `/home/vsftpd` (the bind mount) to `ftpuser` and chmods it `700` at every container start. Local host users without sudo get `Permission denied` on `~/data/ftp/`, so they can't bypass the AD group filter by reading files directly off disk.
 
 ## File inventory
 
