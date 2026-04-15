@@ -285,13 +285,12 @@ journalctl --user -u vsftpd.service --no-pager -n 80
 
 ## History
 
-This project has two architectures recorded in its git history:
+This project went through two architectures before landing on the current one:
 
-1. **vsftpd + libpam-ldapd + nslcd** (preserved in branch `vsftpd-legacy`) — an elegant solution that used the `filter passwd (&(objectClass=user)(memberOf=...))` nslcd trick to make non-members invisible at the NSS layer. The approach works on paper (and is well-documented in the git history), but vsftpd itself crashed on every session teardown in our specific environment (Debian's 3.0.3 and 3.0.5, same code offset, reproducible on every session). The root cause was never pinned down; likely an interaction between vsftpd's privilege-separation model, `libpam-ldapd`'s session handling, and modern glibc/kernel behaviour.
+1. **vsftpd + libpam-ldapd + nslcd** — an elegant-looking solution that used the `filter passwd (&(objectClass=user)(memberOf=...))` nslcd trick to make non-members invisible at the NSS layer. Works on paper, but vsftpd itself crashed on every session teardown in our specific environment (Debian's 3.0.3 and 3.0.5, same code offset, reproducible on every session). Root cause never fully pinned down; likely an interaction between vsftpd's privilege-separation model, `libpam-ldapd`'s session handling, and modern glibc/kernel behaviour.
+2. **ProFTPD + `mod_ldap`** (current main) — replaces the entire stack. `mod_ldap` does AD group filtering natively via the user-search filter; no nslcd, no PAM tricks. Works cleanly and doesn't crash.
 
-2. **ProFTPD + `mod_ldap`** (current `main`) — replaces the entire stack. `mod_ldap` does AD group filtering natively via the user-search filter; no nslcd, no PAM tricks. Works cleanly and doesn't crash.
-
-The vsftpd approach is still an interesting reference if you're doing a similar integration with a different daemon, or if you're stuck on a vsftpd version where the crash doesn't manifest. The `vsftpd-legacy` branch is preserved for that purpose.
+The full diagnostic journey (including every dead-end config we tried) is in the git log on main. If you're integrating vsftpd with LDAP elsewhere and want the nslcd technique as a reference, `git log --oneline | head -50` will walk you back through it.
 
 ---
 

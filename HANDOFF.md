@@ -137,6 +137,6 @@ curl -kv --ssl-reqd --user 'test1:Kode1234!' ftp://192.168.1.13/ 2>&1 | head -30
 
 - **Original attempt with `docker.io/undying/vsftpd`** — uses old `libpam-ldap` with a broken `default=ignore` PAM stack. Group filtering is silently ignored regardless of `LDAP_FILTER`, `pam_filter`, `pam_groupdn`. Six config variants tried, all failed.
 - **Custom `vsftpd` + `libpam-ldapd` + `nslcd`** — the nslcd `filter passwd memberOf=` trick worked for auth, but **vsftpd itself segfaulted on every session teardown** in this kernel/glibc/rootless-podman environment. Reproducible in both Debian 12's vsftpd 3.0.3 and Debian 13's 3.0.5, same code offset. Tried: `one_process_model=YES` (anonymous-only, rejected), `seccomp_sandbox` toggles, stripping every optional feature (`hide_ids`, `virtual_use_local_privs`, `text_userdb_names`, `check_shell`), `Restart=always` with aggressive intervals. Crash never went away.
-- **Pivot to ProFTPD** — clean win. `mod_ldap` does AD group filtering natively via the `LDAPUsers` filter template. No nslcd, no PAM surgery, no segfaults. The vsftpd attempt lives on in branch `vsftpd-legacy` if the code is ever useful as a reference for the nslcd technique.
+- **Pivot to ProFTPD** — clean win. `mod_ldap` does AD group filtering natively via the `LDAPUsers` filter template. No nslcd, no PAM surgery, no segfaults. The full diagnostic journey is in `git log` on main if anyone ever needs it.
 
 **Do not spend time re-trying any vsftpd configuration.** The path forward is ProFTPD or (if ProFTPD ever fails) Pure-FTPd.
