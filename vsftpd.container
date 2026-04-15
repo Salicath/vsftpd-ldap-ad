@@ -2,6 +2,9 @@
 Description=FTP server (vsftpd with AD group filter via nslcd)
 After=network-online.target
 Wants=network-online.target
+# Disable systemd's default restart rate-limit so the container can
+# restart as fast as possible after session-teardown crashes.
+StartLimitIntervalSec=0
 
 [Container]
 ContainerName=vsftpd-ldap

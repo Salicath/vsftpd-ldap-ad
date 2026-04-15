@@ -114,6 +114,24 @@ curl -k --ftp-ssl --user 'test1:Kode1234!' ftp://192.168.1.13/
 | `vsftpd.container` | Quadlet unit, pulls secrets from `EnvironmentFile=%h/ftp.env` |
 | `ftp.env.example` | Copy to `~/ftp.env`, edit if IPs differ |
 
+## Known quirk: vsftpd crashes on session teardown
+
+**Symptom:** after every successful FTP session (including FTPS), the vsftpd main process segfaults with status 139 at a deterministic code offset. `journalctl --user -u vsftpd.service` shows a cycle of `Started → Main process exited, code=exited, status=139 → Scheduled restart`.
+
+**Cause:** specific interaction between Debian's `vsftpd` (both 3.0.3 in bookworm and 3.0.5 in trixie), the `libpam-ldapd`/`nslcd` PAM stack, and the Rocky 10 kernel. The file transfer and the client-side experience complete successfully — the crash happens *after* `226 Transfer complete`, during vsftpd's post-session cleanup. Files are safely on disk.
+
+**Tried and didn't fix it:** version bump (bookworm → trixie), `one_process_model=YES` (anonymous-only — can't use it), stripping optional features (`hide_ids`, `virtual_use_local_privs`, `text_userdb_names`, `check_shell`), `seccomp_sandbox` toggles. The crash is reproducible at the same code offset each time and is not fixable with config alone.
+
+**Mitigation:** `Restart=always` + `RestartSec=1` + `StartLimitIntervalSec=0` in the Quadlet. The container cycles back in ~2-3 seconds after every session. At interactive pace (human typing commands, waiting for output, reading the response) this is invisible. A tight `for` loop calling `curl` back-to-back will fail on the 2nd–3rd call and then recover.
+
+**Exam-day implications:**
+- **Single-session demos work perfectly.** Login as test1 → list → upload → it all succeeds cleanly.
+- **Multi-session demos work** as long as you pause ~3 seconds between commands. Type, read the output, then type the next command — that's more than enough.
+- **Avoid tight scripted loops** in the demo. If you must, add `sleep 5` between iterations.
+- If an examiner runs `for` loops themselves and sees failures, the honest answer is: *"there's a known crash bug in vsftpd 3.0.x combined with this specific PAM stack on modern kernels, which I couldn't fix at the application layer. The mitigation is systemd auto-restart; the gap between sessions is ~2 seconds. In production I would either pin a patched vsftpd build, switch to ProFTPD (which has native `mod_ldap` and doesn't have this issue), or run vsftpd under xinetd so each connection gets a fresh process."*
+
+That answer turns a weakness into a demonstration of engineering judgment: you diagnosed it, you tried surgical fixes, you accepted a pragmatic workaround, you know the upgrade path.
+
 ## Debug checklist
 
 1. **`systemctl --user status vsftpd.service` failed, restarting in a loop** → `journalctl --user -u vsftpd.service --no-pager -n 50` will show the actual error. `nslcd: bind failed` → bad `AD_BIND_DN`/`AD_BIND_PW` in `ftp.env`.
