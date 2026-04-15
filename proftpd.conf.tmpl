@@ -30,11 +30,6 @@ MasqueradeAddress     ${PASV_ADDRESS}
 SystemLog             none
 TransferLog           none
 
-# Temporary LDAP tracing for debugging — read with:
-#   podman exec vsftpd-ldap cat /tmp/proftpd-trace.log
-TraceLog              /tmp/proftpd-trace.log
-Trace                 ldap:20 auth:10
-
 <IfModule mod_ldap.c>
   LDAPServer          ldap://${AD_HOST}
   LDAPBindDN          "${AD_BIND_DN}" "${AD_BIND_PW}"
@@ -45,9 +40,12 @@ Trace                 ldap:20 auth:10
   # For nested groups, swap memberOf= for memberOf:1.2.840.113556.1.4.1941:=
   LDAPUsers           "${AD_BASE_DN}" "(&(sAMAccountName=%u)(memberOf=${AD_GROUP_DN}))"
 
-  # AD stores usernames in sAMAccountName, not the POSIX 'uid' attribute
-  # mod_ldap expects; map it so the lookup actually returns a user record.
+  # AD stores usernames in sAMAccountName and has no POSIX gidNumber;
+  # map both so mod_ldap can parse the record as a user. primaryGroupID
+  # is always 513 on domain users, which is thrown away when
+  # LDAPForceDefaultGID kicks in below.
   LDAPAttr            uid sAMAccountName
+  LDAPAttr            gidNumber primaryGroupID
 
   # Force every authenticated user to the local ftpuser identity (uid 1000).
   LDAPDefaultUID      1000
