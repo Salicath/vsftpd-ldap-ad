@@ -1,0 +1,24 @@
+[Unit]
+Description=FTP server (vsftpd with AD group filter via nslcd)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+ContainerName=vsftpd-ldap
+Image=localhost/vsftpd-ldap:latest
+
+PublishPort=21:21
+PublishPort=50000-50100:50000-50100
+
+Volume=%h/data/ftp:/home/vsftpd:Z
+
+EnvironmentFile=%h/ftp.env
+
+SecurityLabelDisable=true
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
