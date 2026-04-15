@@ -1,0 +1,153 @@
+# Quickstart (exam day)
+
+This is the **copy-paste-from-top-to-bottom** version. You don't need to understand what the commands do. If anything fails, the "If it breaks" section at the bottom has the fix.
+
+## Assumptions (check these first)
+
+You have a **Rocky Linux 10** VM where:
+
+1. You can log in as a non-root user (e.g. `h3`) with sudo rights.
+2. Podman is installed (`podman --version` should work).
+3. You have network access to the Windows DC on port 389 (test with `ping 192.168.1.21`).
+
+If any of those are false, fix them before continuing.
+
+## 1. Install (copy the whole block, paste in one go)
+
+```bash
+cd ~
+sudo dnf install -y git
+git clone https://github.com/Salicath/vsftpd-ldap-ad.git ftp-ldap
+cd ~/ftp-ldap
+chmod +x install.sh test.sh cleanup.sh
+./install.sh
+```
+
+Wait ~1-2 minutes for the first build. When you see:
+
+```
+================================================
+  SUCCESS — the FTP service is running.
+================================================
+```
+
+...you're in.
+
+## 2. Test it
+
+```bash
+cd ~/ftp-ldap
+./test.sh
+```
+
+Expected: four green `[PASS]` lines and `All tests passed. Ready for exam demo.`
+
+## 3. Demo for the examiner
+
+Open two terminals (or just do these in sequence in one):
+
+### Show a group member logging in
+
+```bash
+curl --user 'test1:Kode1234!' ftp://192.168.1.13/
+```
+
+Should list the directory.
+
+### Upload a file
+
+```bash
+echo "hello from exam day" > /tmp/hi.txt
+curl --user 'test1:Kode1234!' -T /tmp/hi.txt ftp://192.168.1.13/
+curl --user 'test1:Kode1234!' ftp://192.168.1.13/   # should now show hi.txt
+```
+
+### Show the group filter in action
+
+On the Windows DC, open **Active Directory Users and Computers**, find `test1`, and **remove them from the `FTP-Brugere` group**. Then immediately:
+
+```bash
+curl --user 'test1:Kode1234!' ftp://192.168.1.13/
+# -> curl: (67) Access denied: 530
+```
+
+No delay, no cache, no container restart. Re-add to the group and run the curl again — it works instantly. This is the "money shot" for the exam.
+
+### Show the filesystem lockdown
+
+```bash
+ls -la ~/data/ftp/
+```
+
+Expected: `ls: cannot open directory '/home/h3/data/ftp/': Permission denied`
+
+**This is correct.** Explanation for the examiner: *"Even though I have shell access to this host, I can't read the FTP data directly. The bind mount is owned by the container's subuid with mode 700, so I'd need to either use the FTP protocol (which goes through AD auth) or use sudo. Local shell bypass of the AD access control is blocked."*
+
+## 4. Optional: turn on TLS/FTPS
+
+Most examiners will ask about encryption. Your answer is the two-layer story: **IPsec at the network layer** (between Site A and Site B, already covers cross-site traffic) **plus FTPS at the transport layer** (covers same-LAN and local admin access). To turn FTPS on:
+
+```bash
+sed -i 's/FTPS_ENABLE=NO/FTPS_ENABLE=YES/' ~/ftp.env
+systemctl --user restart vsftpd.service
+sleep 3
+curl -kv --ssl-reqd --user 'test1:Kode1234!' ftp://192.168.1.13/ 2>&1 | head -30
+```
+
+You should see `234 AUTH SSL successful`, a TLS 1.3 handshake, and `230 User test1 logged in`. The `-k` flag tells curl to accept the self-signed cert. In production, you'd mount a certificate issued by Active Directory Certificate Services instead.
+
+To turn it back off:
+
+```bash
+sed -i 's/FTPS_ENABLE=YES/FTPS_ENABLE=NO/' ~/ftp.env
+systemctl --user restart vsftpd.service
+```
+
+## 5. Start over completely from scratch
+
+If something got messed up and you want to reinstall from nothing:
+
+```bash
+cd ~/ftp-ldap
+./cleanup.sh
+# type 'yes' when prompted
+cd ~/ftp-ldap
+./install.sh
+./test.sh
+```
+
+## If it breaks
+
+| Symptom | What it means / how to fix |
+|---|---|
+| `error getting current working directory` | You ran cleanup from inside `~/ftp-ldap` and your shell is in a deleted dir. Type `cd ~` and try again. |
+| `Permission denied` on `ls ~/data/ftp` | **Not a bug.** That's the filesystem lockdown doing its job. Explain it to the examiner. |
+| `curl: (7) Failed to connect` right after `install.sh` | The container is still starting. Wait 5 seconds and try again. |
+| `curl: (67) Access denied: 530` for a user you expect to work | That user isn't in `FTP-Brugere` in AD. Add them (or check the group DN in `~/ftp.env`). |
+| `Failed to start vsftpd.service` | Read the journal: `journalctl --user -u vsftpd.service --no-pager -n 50` |
+| `./install.sh: Permission denied` | You forgot `chmod +x install.sh test.sh cleanup.sh` — run that again. |
+| `podman not found` | `sudo dnf install -y podman` then rerun `install.sh`. |
+| `rm: cannot remove '/home/h3/data/ftp'` (outside cleanup.sh) | Use `cleanup.sh` instead. Or `podman unshare rm -rf ~/data/ftp`. |
+| `mod_ldap.c not loaded` | The image build failed or is stale. Rerun `./install.sh` — it rebuilds. |
+
+## If the exam uses a different network
+
+Edit `~/ftp.env` and change the values that differ. Most likely:
+
+- `AD_HOST` — DC IP address
+- `AD_BASE_DN` — e.g. `DC=example,DC=local`
+- `AD_BIND_DN` — the service account DN
+- `AD_BIND_PW` — its password
+- `AD_GROUP_DN` — the group whose members are allowed
+- `PASV_ADDRESS` — the IP of *this host* as the FTP client sees it
+
+Then:
+
+```bash
+systemctl --user restart vsftpd.service
+./test.sh
+```
+
+## One-sentence summary for the examiner
+
+> This is a rootless Podman ProFTPD container on Rocky Linux 10. Authentication goes through ProFTPD's `mod_ldap` directly against Active Directory — there's no PAM involved. The group filter is embedded in the LDAP search itself as a `memberOf` clause, so non-members are rejected at the directory level with no cache, enforced on every login. FTPS is available as an opt-in one-env-var flip with an auto-generated self-signed cert for the lab; in production I'd mount a certificate issued by AD Certificate Services. The bind-mounted data directory is mode 700 owned by the container's subuid, so local shell users without sudo can't bypass the network-level access control.

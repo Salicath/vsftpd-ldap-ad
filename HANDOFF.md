@@ -1,5 +1,9 @@
 # ftp-ldap (ProFTPD + AD group filter) — exam-day runbook
 
+> **Looking for exam-day copy-paste steps? → [QUICKSTART.md](QUICKSTART.md)**
+>
+> This file is the full reference/design document. The QUICKSTART has the minimum instructions.
+
 Rootless Podman **ProFTPD** container on Rocky Linux 10. Authenticates users against Windows Active Directory via `mod_ldap` and allows login **only** to members of `CN=FTP-Brugere,OU=Sikkerhedsgrupper,DC=h3,DC=local`. Optional FTPS (TLS 1.2+) via a one-env-var flip. Runs as a systemd user unit via a Podman Quadlet.
 
 **Status:** Tested end-to-end on 2026-04-15. Positive login, upload, negative (non-member) rejection, FTPS with TLS 1.3, filesystem lockdown — all verified. The project originally used `vsftpd`; it was migrated to ProFTPD after `vsftpd` hit a reproducible post-session segfault in this exact environment. See "History" at the bottom.

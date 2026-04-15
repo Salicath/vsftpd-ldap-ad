@@ -2,6 +2,8 @@
 
 **Rootless Podman FTP container with real Active Directory group-membership access control and optional FTPS.**
 
+> **In a hurry? See [QUICKSTART.md](QUICKSTART.md)** — copy-paste install, test, and demo in under 5 minutes. No Linux expertise required.
+
 A minimal `debian:trixie-slim` container running [ProFTPD](http://www.proftpd.org/) with `mod_ldap`, authenticating against a Windows Active Directory and **restricting login to members of a single AD group**. Designed to run rootless under Podman as a systemd Quadlet on modern Linux hosts.
 
 > **Note on the repo name:** this project started life as a vsftpd build and ran into a reproducible vsftpd bug on modern kernels. The working implementation is now ProFTPD; the repo name and Quadlet filename (`vsftpd.container`) are kept for continuity. See the "History" section at the bottom.
