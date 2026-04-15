@@ -39,9 +39,9 @@ if [ ! -f "$HOME/ftp.env" ]; then
     step "Creating $HOME/ftp.env from template..."
     cp ftp.env.example "$HOME/ftp.env"
     chmod 600 "$HOME/ftp.env"
-    warn "Defaults assume the h3.local lab. For a different network, run:"
-    warn "    ./init.sh"
-    warn "to auto-discover the correct values, then rerun this script."
+    warn "Defaults assume the h3.local lab. If your network differs, edit"
+    warn "    nano ~/ftp.env"
+    warn "and change AD_HOST and PASV_ADDRESS, then rerun this script."
 else
     step "$HOME/ftp.env already exists — leaving it alone."
 fi

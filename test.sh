@@ -20,6 +20,9 @@ else
     HOST="192.168.1.13"
 fi
 
+# AD host for error hints (separate from FTP host)
+AD_HOST="$(grep '^AD_HOST=' "$HOME/ftp.env" 2>/dev/null | cut -d= -f2 || echo '<unset>')"
+
 USER="test1"
 PASS_CRED="Kode1234!"
 
@@ -63,9 +66,9 @@ if curl -sS --max-time 10 --user "$USER:$PASS_CRED" "ftp://$HOST/" > /dev/null 2
     pass "$USER authenticated and got a directory listing."
 else
     fail "$USER login rejected. Possible causes:"
-    fail "  - $USER is NOT in the configured AD group"
+    fail "  - $USER is NOT in the configured AD group (check in AD Users and Computers)"
     fail "  - AD bind credentials in ~/ftp.env are wrong"
-    fail "  - DC at $HOST can't reach AD on port 389"
+    fail "  - container can't reach the DC at $AD_HOST on port 389"
 fi
 echo
 
