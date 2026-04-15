@@ -14,7 +14,9 @@ RUN apt-get update && \
     useradd --uid 1000 --home-dir /home/vsftpd --no-create-home \
         --shell /usr/sbin/nologin ftpuser && \
     install -d -o ftpuser -g ftpuser -m 755 /home/vsftpd && \
-    install -d -o root -g root -m 755 /var/run/proftpd
+    install -d -o root -g root -m 755 /var/run/proftpd && \
+    install -d /etc/ldap && \
+    printf 'REFERRALS off\n' >> /etc/ldap/ldap.conf
 
 COPY proftpd.conf.tmpl  /etc/proftpd/proftpd.conf.tmpl
 COPY entrypoint.sh      /usr/local/bin/entrypoint.sh
