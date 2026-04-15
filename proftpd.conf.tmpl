@@ -22,8 +22,9 @@ RequireValidShell     off
 PassivePorts          ${PASV_MIN_PORT} ${PASV_MAX_PORT}
 MasqueradeAddress     ${PASV_ADDRESS}
 
-# Logs to stderr so podman logs picks them up
-SystemLog             /dev/stderr
+# ProFTPD refuses symlinks for SystemLog; 'none' disables file logging
+# (container is ephemeral anyway; use `podman exec` to inspect if needed).
+SystemLog             none
 TransferLog           none
 
 <IfModule mod_ldap.c>
