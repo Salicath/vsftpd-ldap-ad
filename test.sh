@@ -11,17 +11,30 @@ warn() { echo "  ${YELLOW}[WARN]${NC} $*"; }
 
 FAILED=0
 
-# Resolve host: argument, then ftp.env, then default
+# Resolve host: argument first, then the Environment=PASV_ADDRESS line in
+# ftp-ldap.container (repo-local or installed), then default.
+QUADLET_REPO="$(cd "$(dirname "$0")" && pwd)/ftp-ldap.container"
+QUADLET_INSTALLED="$HOME/.config/containers/systemd/ftp-ldap.container"
+read_env_from_quadlet() {
+    local key="$1"
+    for f in "$QUADLET_REPO" "$QUADLET_INSTALLED"; do
+        if [ -f "$f" ]; then
+            local v
+            v=$(grep -E "^Environment=${key}=" "$f" | head -1 | cut -d= -f3-)
+            if [ -n "$v" ]; then echo "$v"; return; fi
+        fi
+    done
+}
+
 if [ $# -ge 1 ]; then
     HOST="$1"
-elif [ -f "$HOME/ftp.env" ] && grep -q '^PASV_ADDRESS=' "$HOME/ftp.env"; then
-    HOST="$(grep '^PASV_ADDRESS=' "$HOME/ftp.env" | cut -d= -f2)"
 else
-    HOST="192.168.1.13"
+    HOST="$(read_env_from_quadlet PASV_ADDRESS)"
+    HOST="${HOST:-192.168.1.13}"
 fi
 
-# AD host for error hints (separate from FTP host)
-AD_HOST="$(grep '^AD_HOST=' "$HOME/ftp.env" 2>/dev/null | cut -d= -f2 || echo '<unset>')"
+AD_HOST="$(read_env_from_quadlet AD_HOST)"
+AD_HOST="${AD_HOST:-<unset>}"
 
 USER="test1"
 PASS_CRED="Kode1234!"
@@ -67,7 +80,7 @@ if curl -sS --max-time 10 --user "$USER:$PASS_CRED" "ftp://$HOST/" > /dev/null 2
 else
     fail "$USER login rejected. Possible causes:"
     fail "  - $USER is NOT in the configured AD group (check in AD Users and Computers)"
-    fail "  - AD bind credentials in ~/ftp.env are wrong"
+    fail "  - AD bind credentials in ftp-ldap.container are wrong"
     fail "  - container can't reach the DC at $AD_HOST on port 389"
 fi
 echo

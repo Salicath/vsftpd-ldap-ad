@@ -34,28 +34,17 @@ fi
 step "Building container image (first build downloads ~30 MB of packages)..."
 podman build -t localhost/ftp-ldap .
 
-# --- 3. config file -----------------------------------------------------------
-if [ ! -f "$HOME/ftp.env" ]; then
-    step "Creating $HOME/ftp.env from template..."
-    cp ftp.env.example "$HOME/ftp.env"
-    chmod 600 "$HOME/ftp.env"
-    warn "Defaults assume the h3.local lab. If your network differs, edit"
-    warn "    nano ~/ftp.env"
-    warn "and change AD_HOST and PASV_ADDRESS, then rerun this script."
-else
-    step "$HOME/ftp.env already exists — leaving it alone."
-fi
+# --- 3. install the Quadlet unit ---------------------------------------------
+QUADLET_DIR="$HOME/.config/containers/systemd"
+step "Installing Quadlet unit to $QUADLET_DIR ..."
+mkdir -p "$QUADLET_DIR"
+cp ftp-ldap.container "$QUADLET_DIR/"
 
-# --- 4. data directory --------------------------------------------------------
+# --- 4. data directory -------------------------------------------------------
 step "Ensuring data directory $HOME/data/ftp exists..."
 mkdir -p "$HOME/data/ftp"
 
-# --- 5. Quadlet unit ----------------------------------------------------------
-step "Installing Quadlet unit to $HOME/.config/containers/systemd/ ..."
-mkdir -p "$HOME/.config/containers/systemd"
-cp ftp-ldap.container "$HOME/.config/containers/systemd/"
-
-# --- 6. start the service -----------------------------------------------------
+# --- 5. start the service -----------------------------------------------------
 step "Starting ftp-ldap.service (systemd user unit)..."
 systemctl --user daemon-reload
 systemctl --user restart ftp-ldap.service
@@ -63,9 +52,10 @@ systemctl --user restart ftp-ldap.service
 # make it survive logout
 loginctl enable-linger "$USER" 2>/dev/null || true
 
-# --- 7. verify (wait for service active AND port 21 accepting) ---------------
+# --- 6. verify (wait for service active AND port 21 accepting) ---------------
 step "Waiting for service to start and port 21 to accept connections..."
-PASV_ADDR="$(grep '^PASV_ADDRESS=' "$HOME/ftp.env" | cut -d= -f2 | tr -d '"' 2>/dev/null || echo 192.168.1.13)"
+PASV_ADDR="$(grep -E '^Environment=PASV_ADDRESS=' ftp-ldap.container | cut -d= -f3)"
+PASV_ADDR="${PASV_ADDR:-192.168.1.13}"
 
 LISTENING=0
 for i in $(seq 1 20); do
@@ -99,6 +89,9 @@ if [ "$LISTENING" -eq 1 ]; then
     echo
     echo "Or manually:"
     echo "    curl --user 'test1:Kode1234!' ftp://$PASV_ADDR/"
+    echo
+    echo "To change the AD / network configuration, edit the"
+    echo "Environment= lines in ftp-ldap.container and rerun this script."
     echo
 else
     echo

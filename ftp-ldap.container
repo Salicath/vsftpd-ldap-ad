@@ -1,3 +1,14 @@
+# ftp-ldap — Podman Quadlet unit.
+#
+# This single file is the complete deployment descriptor:
+# how the container is launched, what ports it publishes, what
+# data volume it mounts, and all of its runtime configuration
+# (AD connection, passive-mode address, FTPS toggle).
+#
+# After editing any Environment= line below, apply with:
+#     systemctl --user daemon-reload
+#     systemctl --user restart ftp-ldap.service
+
 [Unit]
 Description=ftp-ldap (ProFTPD with AD group filter via mod_ldap)
 After=network-online.target
@@ -10,16 +21,37 @@ StartLimitIntervalSec=0
 ContainerName=ftp-ldap
 Image=localhost/ftp-ldap:latest
 
+# Control channel + passive-mode data channel range.
 PublishPort=21:21
 PublishPort=50000-50100:50000-50100
 
+# Host-mounted data directory. The entrypoint chowns this to the
+# container's ftpuser (mode 700) so local host users without sudo
+# cannot bypass the AD group filter by reading files directly.
 Volume=%h/data/ftp:/srv/ftp:Z
 
-# Optional: mount a CA-issued cert to override the auto-generated self-signed one.
-# Requires FTPS_ENABLE=YES in ftp.env. Put cert+key in one PEM file.
+# Optional: mount a CA-issued cert to override the auto-generated
+# self-signed one. Requires FTPS_ENABLE=YES below.
 # Volume=%h/certs/proftpd.pem:/etc/proftpd/ssl/proftpd.pem:Z,ro
 
-EnvironmentFile=%h/ftp.env
+# ---- Active Directory connection -------------------------------------------
+# Change these when the lab network or AD structure moves.
+Environment=AD_HOST=192.168.1.21
+Environment=AD_BASE_DN=DC=h3,DC=local
+Environment=AD_BIND_DN=CN=svc-ldap,OU=Servicekonti,DC=h3,DC=local
+Environment=AD_BIND_PW=Kode1234!
+Environment=AD_GROUP_DN=CN=FTP-Brugere,OU=Sikkerhedsgrupper,DC=h3,DC=local
+
+# ---- Passive FTP -----------------------------------------------------------
+# The IP that FTP clients use to reach this host (not the container).
+Environment=PASV_ADDRESS=192.168.1.13
+Environment=PASV_MIN_PORT=50000
+Environment=PASV_MAX_PORT=50100
+
+# ---- Optional FTPS (explicit TLS) ------------------------------------------
+# Set YES to enable. Auto-generates a self-signed cert unless one is
+# mounted via the commented Volume= line above.
+Environment=FTPS_ENABLE=NO
 
 SecurityLabelDisable=true
 

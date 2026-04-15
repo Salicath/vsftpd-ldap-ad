@@ -65,9 +65,9 @@ cd ftp-ldap
 podman build -t localhost/ftp-ldap .
 
 # Configure
-cp ftp.env.example ~/ftp.env
-chmod 600 ~/ftp.env
-$EDITOR ~/ftp.env        # set AD_HOST, DNs, PASV_ADDRESS — see below
+# Edit ftp-ldap.container to set your AD host / DNs / PASV address
+# (see "Configuration" below)
+$EDITOR ftp-ldap.container
 
 # Data directory (bind-mounted into the container)
 mkdir -p ~/data/ftp
@@ -91,7 +91,7 @@ systemctl --user status ftp-ldap.service --no-pager
 
 ## Configuration
 
-All runtime configuration lives in `~/ftp.env`. Nothing goes in the Quadlet unit or the image.
+All runtime configuration lives as `Environment=` lines inside `ftp-ldap.container` — the systemd Quadlet unit. There is no separate env file: the Quadlet is the single source of truth for both deployment (ports, volumes, restart policy) and runtime config (AD connection, PASV, FTPS toggle). That's deliberate — for a small project, "two files describe everything" (Containerfile + Quadlet) is easier to read than a scatter of partial configs.
 
 | Variable | Example | Description |
 |---|---|---|
@@ -107,7 +107,7 @@ All runtime configuration lives in `~/ftp.env`. Nothing goes in the Quadlet unit
 
 ### Enabling FTPS (TLS)
 
-Set `FTPS_ENABLE=YES` in `~/ftp.env` and restart the service. The entrypoint will:
+Change `Environment=FTPS_ENABLE=NO` to `=YES` in `ftp-ldap.container`, then `systemctl --user daemon-reload && systemctl --user restart ftp-ldap.service`. The entrypoint will:
 
 1. Check for a mounted cert at `/etc/proftpd/ssl/proftpd.pem` (see Quadlet comment for the volume mount line).
 2. If no cert is mounted, auto-generate a self-signed one at container startup. Fine for labs, dev, or any environment where the TLS config itself needs to be demonstrable but the cert's trust anchor isn't critical.
@@ -236,7 +236,7 @@ The bind mount is owned by the container's `ftpuser` subuid with mode `700`. Onl
 
 **The bind account:** use a dedicated read-only LDAP user. A normal, unprivileged domain user is sufficient. Do not use a Domain Admin.
 
-**Password in `~/ftp.env`:** the environment file contains the bind DN password in plaintext. `chmod 600 ~/ftp.env` is mandatory; consider using `systemd-creds` or a secrets backend for production deployments.
+**Bind password in `ftp-ldap.container`:** the Quadlet contains the bind DN password as an `Environment=` line in plaintext. Systemd Quadlet files in `~/.config/containers/systemd/` are mode 600 by default, so only your user can read them. If you're going to publish this repo, scrub or parameterise the password first. For production, use `systemd-creds` or a secrets backend.
 
 **No rate limiting:** ProFTPD has `MaxLoginAttempts`, but brute-force protection should still be layered on top (fail2ban, firewall rate limits, or a reverse proxy).
 
@@ -253,7 +253,7 @@ journalctl --user -u ftp-ldap.service --no-pager -n 80
 | Symptom | Likely cause |
 |---|---|
 | `fatal: unknown configuration directive '...'` | Template rendered but ProFTPD doesn't recognise that directive in this version. Check the directive name against the version's mod_ldap/mod_tls docs. |
-| `curl: (67) Access denied: 530` for a group member | The `AD_GROUP_DN` in `ftp.env` does not exactly match the group's `distinguishedName` in AD. Copy from AD Users & Computers → the group → Attribute Editor → `distinguishedName`. |
+| `curl: (67) Access denied: 530` for a group member | The `AD_GROUP_DN` in `ftp-ldap.container` does not exactly match the group's `distinguishedName` in AD. Copy from AD Users & Computers → the group → Attribute Editor → `distinguishedName`. |
 | `no such user found` in the ProFTPD LDAP log | mod_ldap couldn't parse the returned LDAP entry as a user record. Usually a missing `LDAPAttr` mapping (uid or gidNumber). |
 | LDAP search times out | Referral chasing is enabled. `/etc/ldap/ldap.conf` should contain `REFERRALS off` (the Containerfile adds this). |
 | `AuthOrder: warning: module 'mod_ldap.c' not loaded` | `proftpd-mod-ldap` isn't installed, or mod_ldap isn't explicitly loaded. The Containerfile installs it and the template has `LoadModule mod_ldap.c`. |

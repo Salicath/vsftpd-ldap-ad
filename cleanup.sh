@@ -1,6 +1,6 @@
 #!/bin/bash
-# cleanup.sh — idiot-safe teardown. Removes the service, image, config,
-# and data dir so you can reinstall from scratch. Interactive confirmation.
+# cleanup.sh — idiot-safe teardown. Removes the service, image, and
+# data dir so you can reinstall from scratch. Interactive confirmation.
 set -u
 
 GREEN=$'\e[0;32m'; YELLOW=$'\e[1;33m'; RED=$'\e[0;31m'; NC=$'\e[0m'
@@ -13,14 +13,13 @@ ${YELLOW}This will REMOVE:${NC}
   - systemd user unit ftp-ldap.service (stop + unit file)
   - container image  localhost/ftp-ldap
   - running container ftp-ldap (if any)
-  - config file      ~/ftp.env
   - data directory   ~/data/ftp (and all files inside)
-  - old cruft:       ~/ldap.conf, old vsftpd.container, old vsftpd-ldap images
+  - old cruft:       ~/ftp.env, ~/ldap.conf, old vsftpd.container
 
 It will NOT touch:
   - the cloned repo at ~/ftp-ldap (delete manually if you want)
   - AD or anything on the Windows DC
-  - the sysctl unprivileged-port setting (it's harmless to leave)
+  - the sysctl unprivileged-port setting (harmless to leave)
 EOF
 echo
 read -r -p "Type 'yes' to proceed: " answer
@@ -45,7 +44,7 @@ echo "${GREEN}==>${NC} Removing images..."
 podman images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | \
     grep -iE '(vsftpd|proftpd|ftp-ldap)' | xargs -r podman rmi -f 2>/dev/null || true
 
-echo "${GREEN}==>${NC} Removing config + data..."
+echo "${GREEN}==>${NC} Removing stale files from earlier setups..."
 rm -f "$HOME/ftp.env" "$HOME/ldap.conf"
 
 # The data dir is mode 700 owned by the container's ftpuser subuid,
