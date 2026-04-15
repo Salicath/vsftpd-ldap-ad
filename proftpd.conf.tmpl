@@ -1,0 +1,52 @@
+Include /etc/proftpd/modules.conf
+
+ServerName            "ftp-ldap"
+ServerType            standalone
+DefaultServer         on
+Port                  21
+Umask                 022
+MaxInstances          10
+
+User                  ftpuser
+Group                 ftpuser
+
+# Chroot every session here, regardless of the user's nominal home dir.
+DefaultRoot           /home/vsftpd
+
+AllowOverwrite        on
+AllowStoreRestart     on
+RequireValidShell     off
+
+# Passive mode: range matches the Quadlet's PublishPort, advertised address
+# is the IP the FTP client uses to reach this host.
+PassivePorts          ${PASV_MIN_PORT} ${PASV_MAX_PORT}
+MasqueradeAddress     ${PASV_ADDRESS}
+
+# Logs to stderr so podman logs picks them up
+SystemLog             /dev/stderr
+TransferLog           none
+
+<IfModule mod_ldap.c>
+  LDAPServer          ldap://${AD_HOST}
+  LDAPBindDN          "${AD_BIND_DN}" "${AD_BIND_PW}"
+  LDAPAuthBinds       on
+  LDAPSearchScope     subtree
+
+  # The access-control line: only AD users in the target group match.
+  # For nested groups, swap memberOf= for memberOf:1.2.840.113556.1.4.1941:=
+  LDAPUsers           "${AD_BASE_DN}" "(&(sAMAccountName=%u)(memberOf=${AD_GROUP_DN}))"
+
+  # Force every authenticated user to the local ftpuser identity (uid 1000).
+  LDAPDefaultUID      1000
+  LDAPDefaultGID      1000
+  LDAPForceDefaultUID on
+  LDAPForceDefaultGID on
+
+  # Synthesize a home-directory path so ProFTPD is happy; DefaultRoot above
+  # overrides the actual chroot location.
+  LDAPGenerateHomedir on
+  LDAPGenerateHomedirPrefix /home/vsftpd
+  LDAPGenerateHomedirPrefixNoUsername on
+</IfModule>
+
+AuthOrder             mod_ldap.c
