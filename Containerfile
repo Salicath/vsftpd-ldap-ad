@@ -7,7 +7,8 @@ RUN apt-get update && \
         vsftpd \
         libpam-ldapd \
         gettext-base \
-        ca-certificates && \
+        ca-certificates \
+        openssl && \
     rm -rf /var/lib/apt/lists/* && \
     useradd --uid 1000 --home-dir /home/vsftpd --no-create-home \
         --shell /usr/sbin/nologin ftpuser && \

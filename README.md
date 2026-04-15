@@ -34,8 +34,9 @@ The widely-assumed "just set a `memberOf` filter" doesn't work on vsftpd because
 - ✅ **No AD schema changes** — works with out-of-the-box Active Directory; no need to populate POSIX attributes on users
 - ✅ **Defense in depth** — bind-mount data directory is auto-locked to `chmod 700` owned by the container's subuid at startup, so local host users can't bypass the network-level ACL by reading files directly
 - ✅ **Passive FTP mode** — configurable PASV port range and advertised address (for NAT)
+- ✅ **Optional FTPS (TLS)** — single env var flip; auto-generates a self-signed cert for dev/lab, or mount a CA-issued cert (e.g. from Active Directory Certificate Services) for production
 - ✅ **Nested group support** — documented one-line change for AD `LDAP_MATCHING_RULE_IN_CHAIN` if your FTP group is a group of groups
-- ✅ **Small and inspectable** — 5 config files, a 20-line entrypoint, a 20-line Containerfile
+- ✅ **Small and inspectable** — 5 config files, a 30-line entrypoint, a 20-line Containerfile
 
 ---
 
@@ -103,6 +104,33 @@ All runtime configuration lives in `~/ftp.env`. Nothing goes in the Quadlet unit
 | `PASV_ADDRESS` | `192.168.1.13` | The IP that FTP clients use to reach this host. Must be routable from clients — not a container-internal address. |
 | `PASV_MIN_PORT` | `50000` | Lower bound of passive-mode port range |
 | `PASV_MAX_PORT` | `50100` | Upper bound of passive-mode port range |
+| `FTPS_ENABLE` | `NO` / `YES` | Enable TLS on the control and data channels (explicit FTPS). See below. |
+
+### Enabling FTPS (TLS)
+
+Set `FTPS_ENABLE=YES` in `~/ftp.env` and restart the service. The entrypoint will:
+
+1. Check for a mounted cert at `/etc/vsftpd/vsftpd.pem` (see Quadlet comment for the volume mount line).
+2. If no cert is mounted, auto-generate a self-signed one at container startup. Fine for labs, dev, or any environment where the TLS config itself needs to be demonstrable but the cert's trust anchor isn't critical.
+3. Append the TLS configuration block to `/etc/vsftpd.conf` — forces TLS on both control and data channels (`force_local_logins_ssl=YES`, `force_local_data_ssl=YES`), TLS 1.2 only, `HIGH:!aNULL:!MD5` ciphers.
+
+After enabling, clients must use **explicit FTPS** (the `AUTH TLS` command on the control channel). Examples:
+
+```bash
+curl -k --ftp-ssl --user 'alice:password' ftp://ftp.example.local/   # -k to accept self-signed
+lftp -u alice,password -e 'set ftp:ssl-force yes; ls; bye' ftp.example.local
+```
+
+In FileZilla: **Protocol: FTP → Encryption: Require explicit FTP over TLS**.
+
+**To use a CA-issued cert instead of the auto-generated one** (recommended for production):
+
+1. Put your cert+key concatenated in one PEM file at `~/certs/vsftpd.pem` on the host
+2. `chmod 600 ~/certs/vsftpd.pem`
+3. Uncomment the `Volume=%h/certs/vsftpd.pem:/etc/vsftpd/vsftpd.pem:Z,ro` line in `~/.config/containers/systemd/vsftpd.container`
+4. `systemctl --user daemon-reload && systemctl --user restart vsftpd.service`
+
+The container detects the mounted cert automatically and skips the self-signed generation step. Internal enterprise deployments typically issue this cert from **Active Directory Certificate Services** (free, included with Windows Server), so that domain-joined clients automatically trust it with no cert warnings.
 
 ### For nested AD groups
 
@@ -224,7 +252,7 @@ The bind mount is owned by the container's `ftpuser` subuid with mode `700`. Onl
 
 ## Security considerations
 
-**Plain FTP is unencrypted.** This project authenticates users against AD but transmits credentials and data in the clear. Only use it on trusted networks, behind a VPN, or in combination with network-level access controls. TLS/FTPS support is on the roadmap.
+**TLS is opt-in via `FTPS_ENABLE=YES`.** When disabled, the FTP protocol transmits credentials and data in the clear — only acceptable on trusted networks (isolated VLAN, IPsec/VPN tunnel between sites, etc.). When enabled, use a CA-issued cert for any production scenario; the auto-generated self-signed cert is for lab/dev use where demonstrating TLS configuration matters more than the trust anchor.
 
 **Trust boundary:** the host's root user (or anyone with sudo) can always read the data directory by entering the container's user namespace. This is inherent to rootless containers and not a bug.
 
@@ -266,7 +294,7 @@ journalctl --user -u vsftpd.service --no-pager -n 80
 
 This project is intentionally minimal. The following are deliberate non-goals of the v1 — but candidates for future work if there's demand:
 
-- [ ] **FTPS** (explicit TLS on the FTP protocol) — prevents credential sniffing. Straightforward: `ssl_enable=YES` + cert mount. Needs a cert-generation helper or a sidecar.
+- [x] **FTPS** (explicit TLS on the FTP protocol) — shipped. Enable with `FTPS_ENABLE=YES`, auto-generates self-signed or uses a mounted cert.
 - [ ] **SFTP transport** — a sibling Containerfile using `openssh-server` + `pam_ldapd` would give you the same group filter with SSH-based transport. More production-friendly than FTP.
 - [ ] **Multiple groups** — allow login if user is in any of a list of groups
 - [ ] **Per-group virtual roots** — different chroot per AD group

@@ -12,6 +12,10 @@ PublishPort=50000-50100:50000-50100
 
 Volume=%h/data/ftp:/home/vsftpd:Z
 
+# Optional: mount a CA-issued cert to override the auto-generated self-signed one.
+# Requires FTPS_ENABLE=YES in ftp.env. Put cert+key in one PEM file.
+# Volume=%h/certs/vsftpd.pem:/etc/vsftpd/vsftpd.pem:Z,ro
+
 EnvironmentFile=%h/ftp.env
 
 SecurityLabelDisable=true

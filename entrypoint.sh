@@ -28,6 +28,39 @@ install -d -o root  -g root  -m 755 /var/run/vsftpd/empty
 chown ftpuser:ftpuser /home/vsftpd
 chmod 700 /home/vsftpd
 
+# Optional FTPS: enabled by setting FTPS_ENABLE=YES in ftp.env.
+# Uses a mounted cert at /etc/vsftpd/vsftpd.pem if present, otherwise
+# auto-generates a self-signed one (valid for the lab / dev; replace
+# with a CA-issued cert in production by mounting a real vsftpd.pem).
+if [ "${FTPS_ENABLE:-NO}" = "YES" ]; then
+    install -d -o root -g root -m 755 /etc/vsftpd
+    CERT=/etc/vsftpd/vsftpd.pem
+    if [ ! -f "$CERT" ]; then
+        echo "FTPS: no cert mounted, generating self-signed"
+        openssl req -x509 -nodes -days 825 -newkey rsa:2048 \
+            -keyout "$CERT" -out "$CERT" \
+            -subj "/CN=vsftpd-ldap-ad" >/dev/null 2>&1
+        chmod 600 "$CERT"
+    else
+        echo "FTPS: using mounted cert at $CERT"
+    fi
+    cat >> /etc/vsftpd.conf <<EOF
+
+ssl_enable=YES
+rsa_cert_file=$CERT
+rsa_private_key_file=$CERT
+allow_anon_ssl=NO
+force_local_data_ssl=YES
+force_local_logins_ssl=YES
+ssl_tlsv1_2=YES
+ssl_tlsv1=NO
+ssl_sslv2=NO
+ssl_sslv3=NO
+require_ssl_reuse=NO
+ssl_ciphers=HIGH:!aNULL:!MD5
+EOF
+fi
+
 nslcd
 
 echo "nslcd started; launching vsftpd"

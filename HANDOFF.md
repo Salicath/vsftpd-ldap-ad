@@ -76,7 +76,31 @@ Key tricks:
 - **`guest_enable=YES` + `guest_username=ftpuser`** — every authenticated AD user is remapped to a single local user (`ftpuser`, uid 1000). No per-user uid mapping, no AD POSIX attributes needed.
 - **`map passwd uidNumber primaryGroupID`** — nslcd needs to return *some* numeric uid to satisfy NSS. `primaryGroupID` is always `513` for domain users; the value is irrelevant because vsftpd throws it away on the remap.
 - **Rootless Podman**: port 21 is made unprivileged via sysctl; pasta forwards 21 and 50000-50100 from the host netns to the container.
-- **Defense in depth**: `entrypoint.sh` chowns `/home/vsftpd` (the bind mount) to `ftpuser` and chmods it `700` at every container start. Local host users without sudo get `Permission denied` on `~/data/ftp/`, so they can't bypass the AD group filter by reading files directly off disk.
+- **Defense in depth (filesystem)**: `entrypoint.sh` chowns `/home/vsftpd` (the bind mount) to `ftpuser` and chmods it `700` at every container start. Local host users without sudo get `Permission denied` on `~/data/ftp/`, so they can't bypass the AD group filter by reading files directly off disk.
+- **Optional FTPS (TLS)**: flip `FTPS_ENABLE=YES` in `~/ftp.env` and restart. The entrypoint auto-generates a self-signed cert if none is mounted, or uses a CA-issued cert from `~/certs/vsftpd.pem` if the volume mount line in the Quadlet is uncommented.
+
+## Encryption story (exam talking points)
+
+Two independent layers, each covering a different threat path:
+
+| Layer | Scope | How |
+|---|---|---|
+| **Network (L3)** | Cross-site traffic between Site A and Site B | IPsec tunnel — encrypts all packets between the two sites at the IP layer, regardless of application protocol |
+| **Transport (L6)** | Same-site LAN traffic, admin access, any traffic not crossing the tunnel | FTPS (`FTPS_ENABLE=YES`) — vsftpd terminates TLS on the control and data channels |
+
+> "Encryption is layered. Cross-site traffic between Site A and Site B goes through an IPsec tunnel, which encrypts at the network layer — FTP payloads are encrypted by the tunnel regardless of application protocol. For traffic that doesn't go through the tunnel (same-LAN clients on Site A, admin access, any future non-VPN clients), the FTP server itself terminates TLS via FTPS with an auto-generated self-signed cert. For production, I would mount a cert issued by Active Directory Certificate Services — the DC at Site A is already capable of being a CA, so domain-joined clients would trust it with zero configuration. No single layer is load-bearing for confidentiality; this is defense in depth."
+
+**Should you enable FTPS for the exam demo?**
+
+- **Yes, flip `FTPS_ENABLE=YES`**, even with the self-signed cert. The cert warning becomes a 10-second talking point ("self-signed for the lab; production would use AD CS"), and you get a full encryption story instead of having to defend plain FTP.
+- **If you don't** (e.g., you want to keep the demo simpler), the IPsec-at-the-network-layer answer is still defensible for Site A ↔ Site B traffic. You would be weaker on "what about same-LAN sniffing?" but you can say "Site A's internal LAN is a trusted segment; local-LAN confidentiality is out of scope for this project."
+- The one env var toggle means you can literally decide at the last minute and restart the service in ~2 seconds.
+
+After enabling, test with:
+```bash
+curl -k --ftp-ssl --user 'test1:Kode1234!' ftp://192.168.1.13/
+# -k accepts the self-signed cert
+```
 
 ## File inventory
 
