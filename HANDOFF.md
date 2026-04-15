@@ -14,7 +14,7 @@ Custom `debian:12-slim` image with `libpam-ldapd` + `nslcd`. The critical line i
 ```
 filter passwd (&(objectClass=user)(memberOf=CN=FTP-Brugere,OU=Sikkerhedsgrupper,DC=h3,DC=local))
 ```
-Users outside the group are **invisible** at the NSS layer, so PAM reports `PAM_USER_UNKNOWN` — no group-check logic required, no broken library paths. `objectSid:<base-sid>` mapping derives a stable `uidNumber` without requiring POSIX attributes on AD users.
+Users outside the group are **invisible** at the NSS layer, so PAM reports `PAM_USER_UNKNOWN` — no group-check logic required, no broken library paths. AD users are all mapped to uidNumber `1000` (the local `ftpuser`) because vsftpd's `guest_enable=YES` remaps every login to that local user anyway — no AD POSIX attrs needed, no domain SID to look up.
 
 ## Environment
 - Rocky Linux 10 host user: `h3`
@@ -37,29 +37,17 @@ Users outside the group are **invisible** at the NSS layer, so PAM reports `PAM_
 - `vsftpd.container` — Quadlet unit, pulls secrets from `EnvironmentFile=%h/ftp.env`
 - `ftp.env.example` — template; real one lives at `~/ftp.env` on Rocky (chmod 600)
 
-## Tomorrow's next steps
+## Next steps
 
-### 1. On the Windows DC, get the domain SID (needed for nslcd mapping)
-```powershell
-(Get-ADDomain).DomainSID.Value
-```
-Expect `S-1-5-21-<a>-<b>-<c>`. Copy it.
-
-### 2. Transfer files to Rocky
-From the dev laptop:
+### 1. Clone and build on Rocky
 ```bash
-scp -r ~/Downloads/Skoleprojekt/ftp-ldap h3@<rocky-ip>:~/
-```
-
-### 3. Build image and install Quadlet on Rocky
-```bash
-cd ~/ftp-ldap
-
+git clone https://github.com/Salicath/vsftpd-ldap-ad.git ftp-ldap
+cd ftp-ldap
 podman build -t localhost/vsftpd-ldap .
 
 cp ftp.env.example ~/ftp.env
 chmod 600 ~/ftp.env
-# edit ~/ftp.env: paste real AD_DOMAIN_SID, confirm PASV_ADDRESS is 192.168.1.13 for test
+# verify PASV_ADDRESS is 192.168.1.13 for test (no other edits needed)
 
 mkdir -p ~/data/ftp
 
@@ -92,7 +80,7 @@ lftp -u <other-user> ftp://192.168.1.13
 Expected: group member lists and uploads fine; non-member gets `530 Login incorrect`.
 
 ## Debug checklist if things break
-1. `podman logs` shows `nslcd` won't start → usually bad `AD_DOMAIN_SID` format or bind failure. Verify bind with `ldapsearch` from the host first (the exact working command is in the briefing).
+1. `podman logs` shows `nslcd` won't start → usually a bind failure. Verify bind with `ldapsearch` from the host first.
 2. Group member can't log in → the group DN in `ftp.env` must match the exact AD X500 DN. Copy from AD Users & Computers → test1 → Attribute Editor → `memberOf` → distinguishedName.
 3. Nested AD groups → swap the filter to `(memberOf:1.2.840.113556.1.4.1941:=CN=FTP-Brugere,...)` in `nslcd.conf.tmpl` and rebuild.
 4. PASV connection hangs → `PASV_ADDRESS` must be the IP the client uses to reach the host (not the container-internal address). For test it's 192.168.1.13.

@@ -14,15 +14,11 @@ referrals no
 # For nested groups, swap memberOf= for memberOf:1.2.840.113556.1.4.1941:=
 filter passwd (&(objectClass=user)(memberOf=${AD_GROUP_DN}))
 map    passwd uid           sAMAccountName
-map    passwd uidNumber     objectSid:${AD_DOMAIN_SID}
-map    passwd gidNumber     objectSid:${AD_DOMAIN_SID}
+map    passwd uidNumber     "1000"
+map    passwd gidNumber     "1000"
 map    passwd homeDirectory "/home/vsftpd"
 map    passwd gecos         displayName
 map    passwd loginShell    "/usr/sbin/nologin"
 
 filter shadow (&(objectClass=user)(memberOf=${AD_GROUP_DN}))
 map    shadow uid           sAMAccountName
-
-filter group (objectClass=group)
-map    group  gidNumber     objectSid:${AD_DOMAIN_SID}
-map    group  cn            sAMAccountName
