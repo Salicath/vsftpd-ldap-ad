@@ -6,6 +6,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         proftpd-basic \
         proftpd-mod-ldap \
+        proftpd-mod-crypto \
         gettext-base \
         ca-certificates \
         openssl && \

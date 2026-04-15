@@ -1,7 +1,9 @@
 Include /etc/proftpd/modules.conf
-# Debian's proftpd-mod-ldap ships the module but doesn't auto-load it;
-# force it before any AuthOrder / <IfModule> blocks reference it.
+# Debian ships both mod_ldap and mod_tls as separate packages and leaves
+# them commented out in modules.conf; force-load both so <IfModule> blocks
+# further down actually fire.
 LoadModule            mod_ldap.c
+LoadModule            mod_tls.c
 
 ServerName            "ftp-ldap"
 ServerType            standalone
