@@ -38,7 +38,7 @@ podman build -t localhost/ftp-ldap .
 QUADLET_DIR="$HOME/.config/containers/systemd"
 step "Installing Quadlet unit to $QUADLET_DIR ..."
 mkdir -p "$QUADLET_DIR"
-cp ftp-ldap.container "$QUADLET_DIR/"
+install -m 600 ftp-ldap.container "$QUADLET_DIR/"
 
 # --- 4. data directory -------------------------------------------------------
 step "Ensuring data directory $HOME/data/ftp exists..."
@@ -54,7 +54,7 @@ loginctl enable-linger "$USER" 2>/dev/null || true
 
 # --- 6. verify (wait for service active AND port 21 accepting) ---------------
 step "Waiting for service to start and port 21 to accept connections..."
-PASV_ADDR="$(grep -E '^Environment=PASV_ADDRESS=' ftp-ldap.container | cut -d= -f3)"
+PASV_ADDR="$(grep -E '^Environment=PASV_ADDRESS=' ftp-ldap.container | cut -d= -f3-)"
 PASV_ADDR="${PASV_ADDR:-192.168.1.13}"
 
 LISTENING=0
@@ -95,7 +95,7 @@ if [ "$LISTENING" -eq 1 ]; then
     echo
 else
     echo
-    warn "Service did not respond on port 21 after 20 seconds."
+    warn "Service did not respond on port 21 after 60 seconds."
     warn "Last 30 log lines:"
     journalctl --user -u ftp-ldap.service --no-pager -n 30 || true
     die "Investigate the log above and rerun this script."

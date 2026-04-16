@@ -10,7 +10,19 @@ ServerType            standalone
 DefaultServer         on
 Port                  21
 Umask                 022
-MaxInstances          10
+MaxInstances          30
+MaxLoginAttempts      3
+MaxClients            25
+MaxClientsPerHost     8
+MaxClientsPerUser     3
+
+TimeoutLogin          60
+TimeoutIdle           600
+TimeoutNoTransfer     300
+TimeoutStalled        120
+
+IdentLookups          off
+RootLogin             off
 
 User                  ftpuser
 Group                 ftpuser
@@ -27,18 +39,13 @@ RequireValidShell     off
 PassivePorts          ${PASV_MIN_PORT} ${PASV_MAX_PORT}
 MasqueradeAddress     ${PASV_ADDRESS}
 
-# ProFTPD refuses symlinks for SystemLog; 'none' disables file logging
-# (container is ephemeral anyway; use `podman exec` to inspect if needed).
-SystemLog             none
-TransferLog           none
-
 <IfModule mod_ldap.c>
-  # RFC 4516 URL with '/??sub' forces subtree scope; without it mod_ldap
-  # may fall back to a base-only search that returns nothing.
-  LDAPServer          ldap://${AD_HOST}/??sub
+  LDAPServer          ${AD_HOST}
   LDAPBindDN          "${AD_BIND_DN}" "${AD_BIND_PW}"
   LDAPAuthBinds       on
   LDAPSearchScope     subtree
+  LDAPConnectTimeout  5
+  LDAPQueryTimeout    5
 
   # NB: AD referral chasing (which causes search timeouts) is disabled
   # system-wide via /etc/ldap/ldap.conf 'REFERRALS off' — see Containerfile.

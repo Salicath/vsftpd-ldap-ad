@@ -13,9 +13,10 @@
 Description=ftp-ldap (ProFTPD with AD group filter via mod_ldap)
 After=network-online.target
 Wants=network-online.target
-# Disable systemd's default restart rate-limit so the container can
-# restart as fast as possible on failure.
-StartLimitIntervalSec=0
+# Allow up to 5 quick restarts in 60 seconds; after that systemd
+# stops retrying so you can investigate with journalctl.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Container]
 ContainerName=ftp-ldap
@@ -54,6 +55,12 @@ Environment=PASV_MAX_PORT=50100
 Environment=FTPS_ENABLE=NO
 
 SecurityLabelDisable=true
+
+HealthCmd=bash -c '</dev/tcp/localhost/21'
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=10s
 
 [Service]
 Restart=always

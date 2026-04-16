@@ -20,8 +20,7 @@ RUN apt-get update && \
     printf 'REFERRALS off\n' >> /etc/ldap/ldap.conf
 
 COPY proftpd.conf.tmpl  /etc/proftpd/proftpd.conf.tmpl
-COPY entrypoint.sh      /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
 
 EXPOSE 21 50000-50100
 

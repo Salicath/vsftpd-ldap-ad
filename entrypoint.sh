@@ -22,7 +22,7 @@ chmod 600 /etc/proftpd/proftpd.conf
 chown ftpuser:ftpuser /srv/ftp
 chmod 700 /srv/ftp
 
-# Optional FTPS: enable by setting FTPS_ENABLE=YES in ftp.env.
+# Optional FTPS: enable by setting FTPS_ENABLE=YES in ftp-ldap.container.
 # Uses a mounted cert at /etc/proftpd/ssl/proftpd.pem if present,
 # otherwise auto-generates a self-signed one. Replace with a CA-issued
 # cert in production by mounting a real proftpd.pem via the Quadlet.

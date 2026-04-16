@@ -1,6 +1,6 @@
 #!/bin/bash
 # test.sh — smoke tests for the ftp-ldap container.
-# Usage: ./test.sh              (uses ~/ftp.env's PASV_ADDRESS)
+# Usage: ./test.sh              (uses ftp-ldap.container's PASV_ADDRESS)
 #        ./test.sh 192.168.1.13 (override host)
 set -u
 
@@ -36,11 +36,11 @@ fi
 AD_HOST="$(read_env_from_quadlet AD_HOST)"
 AD_HOST="${AD_HOST:-<unset>}"
 
-USER="test1"
+FTP_USER="test1"
 PASS_CRED="Kode1234!"
 
 echo
-echo "ftp-ldap smoke tests — host=$HOST user=$USER"
+echo "ftp-ldap smoke tests — host=$HOST user=$FTP_USER"
 echo "==============================================="
 echo
 
@@ -74,12 +74,12 @@ fi
 echo
 
 # ---- 2. positive login -------------------------------------------------------
-echo "2. Can $USER log in (is a member of the AD group)..."
-if curl -sS --max-time 10 --user "$USER:$PASS_CRED" "ftp://$HOST/" > /dev/null 2>&1; then
-    pass "$USER authenticated and got a directory listing."
+echo "2. Can $FTP_USER log in (is a member of the AD group)..."
+if curl -sS --max-time 10 --user "$FTP_USER:$PASS_CRED" "ftp://$HOST/" > /dev/null 2>&1; then
+    pass "$FTP_USER authenticated and got a directory listing."
 else
-    fail "$USER login rejected. Possible causes:"
-    fail "  - $USER is NOT in the configured AD group (check in AD Users and Computers)"
+    fail "$FTP_USER login rejected. Possible causes:"
+    fail "  - $FTP_USER is NOT in the configured AD group (check in AD Users and Computers)"
     fail "  - AD bind credentials in ftp-ldap.container are wrong"
     fail "  - container can't reach the DC at $AD_HOST on port 389"
 fi
@@ -90,17 +90,19 @@ echo "3. File upload works and lands on the host..."
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
 TEST_FILE="/tmp/ftp-test-$STAMP.txt"
 echo "test upload at $STAMP" > "$TEST_FILE"
-if curl -sS --max-time 10 --user "$USER:$PASS_CRED" -T "$TEST_FILE" "ftp://$HOST/" 2>&1 | grep -q '^curl:'; then
-    fail "Upload failed."
-else
+if curl -sS --max-time 10 --user "$FTP_USER:$PASS_CRED" -T "$TEST_FILE" "ftp://$HOST/" >/dev/null 2>&1; then
     pass "Upload completed."
+else
+    fail "Upload failed."
 fi
 rm -f "$TEST_FILE"
 echo
 
 # ---- 4. filesystem lockdown --------------------------------------------------
 echo "4. Local host users can't read the data directory..."
-if ls -la "$HOME/data/ftp/" >/dev/null 2>&1; then
+if [ ! -d "$HOME/data/ftp" ]; then
+    fail "$HOME/data/ftp does not exist — was install.sh run?"
+elif ls -la "$HOME/data/ftp/" >/dev/null 2>&1; then
     fail "Local user CAN read $HOME/data/ftp — lockdown is OFF."
     fail "  Expected: 'Permission denied' (entrypoint.sh should chmod 700)."
 else

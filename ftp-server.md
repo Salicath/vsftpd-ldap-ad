@@ -325,6 +325,9 @@ cp /home/h3/ftp-ldap/ftp-ldap.container \
 
 systemctl --user daemon-reload
 systemctl --user start ftp-ldap.service
+
+# Sørg for at containeren overlever logout
+sudo loginctl enable-linger h3
 ```
 
 Verificer:
