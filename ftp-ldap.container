@@ -20,7 +20,10 @@ StartLimitBurst=5
 
 [Container]
 ContainerName=ftp-ldap
-Image=localhost/ftp-ldap:latest
+Image=ghcr.io/salicath/ftp-ldap:latest
+# Pull the image if it's missing or newer on GHCR. Beginners never
+# run `podman build` or `podman pull` — systemd fetches it on start.
+Pull=newer
 
 # Control channel + passive-mode data channel range.
 PublishPort=21:21
