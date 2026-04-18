@@ -9,6 +9,7 @@ RUN apt-get update && \
         proftpd-mod-crypto \
         gettext-base \
         ca-certificates \
+        openssh-client \
         openssl && \
     rm -rf /var/lib/apt/lists/* && \
     userdel proftpd 2>/dev/null || true && \
@@ -22,6 +23,6 @@ RUN apt-get update && \
 COPY proftpd.conf.tmpl  /etc/proftpd/proftpd.conf.tmpl
 COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
 
-EXPOSE 21 50000-50100
+EXPOSE 21 2222 50000-50100
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

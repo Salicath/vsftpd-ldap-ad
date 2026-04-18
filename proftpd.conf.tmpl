@@ -1,9 +1,10 @@
 Include /etc/proftpd/modules.conf
-# Debian ships both mod_ldap and mod_tls as separate packages and leaves
-# them commented out in modules.conf; force-load both so <IfModule> blocks
-# further down actually fire.
+# Debian ships mod_ldap, mod_tls and mod_sftp as separate packages and
+# leaves them commented out in modules.conf; force-load them all so the
+# <IfModule> blocks further down actually fire.
 LoadModule            mod_ldap.c
 LoadModule            mod_tls.c
+LoadModule            mod_sftp.c
 
 ServerName            "ftp-ldap"
 ServerType            standalone
@@ -38,41 +39,69 @@ RequireValidShell     off
 PassivePorts          ${PASV_MIN_PORT} ${PASV_MAX_PORT}
 MasqueradeAddress     ${PASV_ADDRESS}
 
-<IfModule mod_ldap.c>
-  LDAPServer          ${AD_HOST}
-  LDAPBindDN          "${AD_BIND_DN}" "${AD_BIND_PW}"
-  LDAPAuthBinds       on
-  LDAPSearchScope     subtree
-  LDAPConnectTimeout  5
-  LDAPQueryTimeout    5
+# <Global> block: everything inside applies to BOTH the main server
+# (plain FTP on port 21) and to the SFTP <VirtualHost> further down.
+# ProFTPD's mod_ldap directives have "server config" scope and do NOT
+# inherit from main server into a VirtualHost, so they must live here.
+<Global>
+  <IfModule mod_ldap.c>
+    LDAPServer          ${AD_HOST}
+    LDAPBindDN          "${AD_BIND_DN}" "${AD_BIND_PW}"
+    LDAPAuthBinds       on
+    LDAPSearchScope     subtree
+    LDAPConnectTimeout  5
+    LDAPQueryTimeout    5
 
-  # NB: AD referral chasing (which causes search timeouts) is disabled
-  # system-wide via /etc/ldap/ldap.conf 'REFERRALS off' — see Containerfile.
-  # ProFTPD itself has no directive for it.
+    # NB: AD referral chasing (which causes search timeouts) is disabled
+    # system-wide via /etc/ldap/ldap.conf 'REFERRALS off' — see Containerfile.
+    # ProFTPD itself has no directive for it.
 
-  # The access-control line: only AD users in the target group match.
-  # Third filter (uid-number) is required for syntactic completeness even
-  # though LDAPForceDefaultUID means it's never actually queried.
-  # For nested groups, swap memberOf= for memberOf:1.2.840.113556.1.4.1941:=
-  LDAPUsers           "${AD_BASE_DN}" "(&(objectClass=user)(sAMAccountName=%u)(memberOf=${AD_GROUP_DN}))" "(&(objectClass=user)(uidNumber=%v))"
+    # The access-control line: only AD users in the target group match.
+    # Third filter (uid-number) is required for syntactic completeness even
+    # though LDAPForceDefaultUID means it's never actually queried.
+    # For nested groups, swap memberOf= for memberOf:1.2.840.113556.1.4.1941:=
+    LDAPUsers           "${AD_BASE_DN}" "(&(objectClass=user)(sAMAccountName=%u)(memberOf=${AD_GROUP_DN}))" "(&(objectClass=user)(uidNumber=%v))"
 
-  # AD stores usernames in sAMAccountName and has no POSIX gidNumber;
-  # map both so mod_ldap can parse the record as a user. primaryGroupID
-  # is always 513 on domain users and is thrown away by LDAPForceDefaultGID.
-  LDAPAttr            uid sAMAccountName
-  LDAPAttr            gidNumber primaryGroupID
+    # AD stores usernames in sAMAccountName and has no POSIX gidNumber;
+    # map both so mod_ldap can parse the record as a user. primaryGroupID
+    # is always 513 on domain users and is thrown away by LDAPForceDefaultGID.
+    LDAPAttr            uid sAMAccountName
+    LDAPAttr            gidNumber primaryGroupID
 
-  # Force every authenticated user to the local ftpuser identity (uid 1000).
-  LDAPDefaultUID      1000
-  LDAPDefaultGID      1000
-  LDAPForceDefaultUID on
-  LDAPForceDefaultGID on
+    # Force every authenticated user to the local ftpuser identity (uid 1000).
+    LDAPDefaultUID      1000
+    LDAPDefaultGID      1000
+    LDAPForceDefaultUID on
+    LDAPForceDefaultGID on
 
-  # Synthesize a home-directory path so ProFTPD is happy; DefaultRoot above
-  # overrides the actual chroot location.
-  LDAPGenerateHomedir on
-  LDAPGenerateHomedirPrefix /srv/ftp
-  LDAPGenerateHomedirPrefixNoUsername on
+    # Synthesize a home-directory path so ProFTPD is happy; DefaultRoot above
+    # overrides the actual chroot location.
+    LDAPGenerateHomedir on
+    LDAPGenerateHomedirPrefix /srv/ftp
+    LDAPGenerateHomedirPrefixNoUsername on
+  </IfModule>
+
+  AuthOrder             mod_ldap.c
+</Global>
+
+# SFTP on port 2222. The LDAP config + AuthOrder in the <Global> block
+# above are inherited here, so one AD group (FTP-Brugere) grants access
+# to both FTP (21) and SFTP (2222). Use SFTP for clients that cannot
+# handle PASV/NAT (e.g. Nextcloud External Storage from inside a
+# container network).
+<IfModule mod_sftp.c>
+  <VirtualHost 0.0.0.0>
+    Port                  2222
+    ServerName            "ftp-ldap-sftp"
+    DefaultServer         off
+    DefaultRoot           /srv/ftp
+    RequireValidShell     off
+
+    SFTPEngine            on
+    SFTPLog               /var/log/proftpd/sftp.log
+    SFTPHostKey           /etc/proftpd/ssh/ssh_host_ed25519_key
+    SFTPHostKey           /etc/proftpd/ssh/ssh_host_rsa_key
+    SFTPAuthMethods       password
+    SFTPCompression       delayed
+  </VirtualHost>
 </IfModule>
-
-AuthOrder             mod_ldap.c

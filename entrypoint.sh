@@ -52,5 +52,16 @@ if [ "${FTPS_ENABLE:-NO}" = "YES" ]; then
 EOF
 fi
 
+# SSH host keys for mod_sftp. Generated on first start so the end user
+# never has to manage key files — they live entirely inside the container.
+# Re-creating the container regenerates them; SFTP clients will see a
+# one-time "host key changed" warning, which is acceptable for this lab.
+install -d -o root -g root -m 700 /etc/proftpd/ssh
+[ -f /etc/proftpd/ssh/ssh_host_ed25519_key ] || \
+    ssh-keygen -q -t ed25519 -N "" -f /etc/proftpd/ssh/ssh_host_ed25519_key
+[ -f /etc/proftpd/ssh/ssh_host_rsa_key ] || \
+    ssh-keygen -q -t rsa -b 3072 -N "" -f /etc/proftpd/ssh/ssh_host_rsa_key
+chmod 600 /etc/proftpd/ssh/ssh_host_ed25519_key /etc/proftpd/ssh/ssh_host_rsa_key
+
 echo "launching proftpd"
 exec proftpd --nodaemon --config /etc/proftpd/proftpd.conf

@@ -25,9 +25,13 @@ Image=ghcr.io/salicath/ftp-ldap:latest
 # run `podman build` or `podman pull` — systemd fetches it on start.
 Pull=newer
 
-# Control channel + passive-mode data channel range.
+# Control channel + passive-mode data channel range (plain FTP).
 PublishPort=21:21
 PublishPort=50000-50100:50000-50100
+
+# SFTP (SSH File Transfer). Single TCP connection, no PASV — use this
+# from Nextcloud External Storage and anywhere PASV/NAT is awkward.
+PublishPort=2222:2222
 
 # Host-mounted data directory. The entrypoint chowns this to the
 # container's ftpuser (mode 700) so local host users without sudo
