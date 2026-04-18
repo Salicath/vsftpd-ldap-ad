@@ -60,6 +60,7 @@ Pull=newer
 
 PublishPort=21:21
 PublishPort=50000-50100:50000-50100
+PublishPort=2222:2222
 
 Volume=/home/h3/data/ftp:/srv/ftp:Z
 
@@ -113,6 +114,7 @@ Erstat placeholders med jeres AD-oplysninger (værdier kommer fra `00-variabler.
 | `Pull=newer` | Henter automatisk imaget ved første start og opdaterer ved nye versioner |
 | `PublishPort=21:21` | Kontrolkanal — standard FTP-port |
 | `PublishPort=50000-50100` | Passive mode data-range |
+| `PublishPort=2222:2222` | SFTP (SSH File Transfer) — én TCP-forbindelse, ingen PASV |
 | `Volume=...:/srv/ftp:Z` | FTP data på hosten (låses automatisk til mode 700) |
 | `AD_HOST` / `AD_BASE_DN` | Domain Controller IP og LDAP-søgebase |
 | `AD_BIND_DN` / `AD_BIND_PW` | Service-konto ProFTPD binder med |
@@ -148,6 +150,7 @@ Forventet: `Active: active (running)` og en container ved navn `ftp-ldap` i `pod
 ```bash
 sudo firewall-cmd --add-service=ftp --permanent
 sudo firewall-cmd --add-port=50000-50100/tcp --permanent
+sudo firewall-cmd --add-port=2222/tcp --permanent
 sudo firewall-cmd --reload
 ```
 
@@ -191,7 +194,28 @@ curl --user 'test1:Kode1234!' ftp://10.2.80.11/
 
 Den anden `curl` skal vise `testfil.txt` i listen.
 
-### 7.4 Test adgangsbegrænsning (det vigtigste)
+### 7.4 Test SFTP
+
+Samme AD-gruppe (`FTP-Brugere`) giver adgang til både FTP (21) og SFTP (2222). Bekræft SSH-banner:
+
+```bash
+python3 -c "import socket; s=socket.socket(); s.settimeout(3); \
+    s.connect(('10.2.80.11',2222)); print(s.recv(200).decode().strip())"
+```
+
+Forventet: `SSH-2.0-mod_sftp`
+
+Test login som gruppe-medlem:
+
+```bash
+sftp -P 2222 test1@10.2.80.11
+```
+
+Efter password vises `sftp>` — brug `ls`, `put`, `get`, `exit` som i en almindelig shell. Erstat `test1` med en rigtig bruger der er medlem af `FTP-Brugere`.
+
+**Hvornår bruges SFTP i stedet for FTP?** SFTP bruger én TCP-forbindelse uden PASV-data-kanal og er nemmere at få til at virke gennem NAT, container-netværk og VPN'er. Nextcloud External Storage på samme vært som FTP-serveren kan f.eks. ikke bruge PASV (pasta-netværket hairpin'er ikke værtens LAN-IP tilbage ind i pod'en) — brug SFTP på port 2222 i stedet.
+
+### 7.5 Test adgangsbegrænsning (det vigtigste)
 
 På Windows DC'en: åbn **Active Directory Users and Computers**, find brugeren, højreklik → **Properties** → fanen **Member Of** → marker `FTP-Brugere` → **Remove** → **OK**.
 
@@ -203,7 +227,7 @@ curl --user 'test1:Kode1234!' ftp://10.2.80.11/
 
 Forventet: `curl: (67) Access denied: 530`. Ingen ventetid, ingen genstart af service. Tilføj brugeren til gruppen igen og kør `curl` — det virker med det samme.
 
-### 7.5 Test lokal filsystem-spærring
+### 7.6 Test lokal filsystem-spærring
 
 ```bash
 ls -la /home/h3/data/ftp/
@@ -296,7 +320,7 @@ systemctl --user restart ftp-ldap.service
 | OS | Rocky Linux 10 |
 | Container runtime | Podman (rootless) |
 | Image | `ghcr.io/salicath/ftp-ldap:latest` (pre-built, auto-updates) |
-| FTP daemon | ProFTPD med mod_ldap og mod_tls |
+| FTP daemon | ProFTPD med mod_ldap, mod_tls og mod_sftp |
 | Sysctl | `net.ipv4.ip_unprivileged_port_start=21` (påkrævet for rootless) |
 | Autentificering | Active Directory via LDAP (`mod_ldap`) |
 | Adgangskontrol | `memberOf` filter i selve LDAP-søgningen — ingen cache |
@@ -304,10 +328,10 @@ systemctl --user restart ftp-ldap.service
 | Quadlet-fil | `/home/h3/.config/containers/systemd/ftp-ldap.container` (den eneste fil man rører) |
 | FTP data (host) | `/home/h3/data/ftp` (mode 700, ejet af containerens subuid) |
 | FTP data (container) | `/srv/ftp` |
-| Porte | 21 (kontrol) + 50000-50100 (passive) |
+| Porte | 21 (kontrol) + 50000-50100 (passive) + 2222 (SFTP) |
 | Systemd unit | `ftp-ldap.service` |
 | Valgfri TLS | `FTPS_ENABLE=YES` → automatisk selvsigneret certifikat |
 | WordPress-integration | FTP-uploads som read-only volume |
-| Nextcloud-integration | FTP-uploads via External Storage (FTP backend) |
+| Nextcloud-integration | SFTP-mount via External Storage på port 2222 (undgår PASV/NAT) |
 | Alle credentials | Service-konto password: `Kode1234!` |
 | Placering | Site B — datacenter (bag ASA2) |
